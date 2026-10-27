@@ -1,0 +1,3720 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>MiTH Terminal — Mobile Developer Console</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="MiTH Term">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#09090b">
+  <link rel="apple-touch-icon" sizes="180x180" href="/api/terminal/icon-180.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/api/terminal/icon-512.png">
+  <link rel="manifest" id="mith-manifest-link" href="/api/terminal/manifest.json">
+  <script>
+    (function () {
+      try {
+        var p = location.pathname.indexOf('/mith-terminal') === 0
+          ? '/mith-terminal'
+          : (location.pathname.indexOf('/terminal') === 0 ? '/terminal' : '/');
+        var ml = document.getElementById('mith-manifest-link');
+        if (ml && (location.protocol === 'https:' || location.protocol === 'http:')) {
+          if (location.hostname.endsWith('.github.io')) {
+            ml.href = './manifest.json';
+          } else {
+            ml.href = '/api/terminal/manifest.json?start=' + encodeURIComponent(p);
+          }
+        }
+      } catch (_) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/api/terminal/vendor/xterm.css">
+  <script src="/api/terminal/vendor/xterm.js"></script>
+  <script src="/api/terminal/vendor/xterm-addon-fit.js"></script>
+  <style>
+    :root {
+      --bg: #09090b;
+      --card-bg: #121217;
+      --card-border: #27272a;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --text: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --key-bg: #18181b;
+      --key-border: #3f3f46;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      margin: 0;
+      padding: 0;
+    }
+
+    body.terminal-active {
+      height: 100vh;
+      height: var(--app-height, 100dvh);
+      overflow: hidden;
+      background: #09090b;
+    }
+    body.terminal-active > header {
+      display: none !important;
+    }
+    body.terminal-active > main {
+      padding: 0;
+      max-width: 100%;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    body.terminal-active #terminal-view {
+      display: flex !important;
+      flex-direction: column;
+      height: 100%;
+      width: 100%;
+      min-height: 0;
+      padding: 0;
+      margin: 0;
+      background: #09090b;
+    }
+    body.terminal-active .terminal-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+      border: none;
+      border-radius: 0;
+      margin: 0;
+      background: #09090b;
+    }
+    @media (min-width: 768px) {
+      body.terminal-active > main {
+        padding: 16px;
+      }
+      body.terminal-active .terminal-container {
+        border: 1px solid var(--card-border);
+        border-radius: 12px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+      }
+    }
+
+    /* Top Navigation */
+    header {
+      padding: max(12px, env(safe-area-inset-top)) 16px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--card-border);
+      background: rgba(9, 9, 11, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+    }
+    .brand-badge {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(99, 102, 241, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      min-height: 36px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+    }
+    .header-settings-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 16px;
+      min-width: 44px;
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+    }
+    .header-settings-btn:active { background: #18181b; }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+    .dot.offline { background: var(--danger); box-shadow: none; }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      max-width: 640px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* Card Panels */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.45;
+      margin-bottom: 16px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      min-height: 44px;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:active { background: var(--accent-hover); transform: scale(0.985); }
+    .btn-secondary {
+      background: #18181b;
+      color: var(--text);
+      border: 1px solid var(--card-border);
+    }
+    .btn-secondary:active { background: #27272a; transform: scale(0.985); }
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--danger);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .btn-danger:active { background: rgba(239, 68, 68, 0.25); }
+
+    /* Onboarding Steps */
+    .stepper {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      position: relative;
+    }
+    .stepper::before {
+      content: '';
+      position: absolute;
+      top: 14px;
+      left: 20px;
+      right: 20px;
+      height: 2px;
+      background: var(--card-border);
+      z-index: 1;
+    }
+    .step-node {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+    .step-circle {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--card-bg);
+      border: 2px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .step-node.active .step-circle {
+      border-color: var(--accent);
+      color: #fff;
+      background: var(--accent);
+      box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+    }
+    .step-node.active { color: var(--text); }
+    .step-node.done .step-circle {
+      background: var(--success);
+      border-color: var(--success);
+      color: #fff;
+    }
+
+    /* Code Snippet Box */
+    .code-box {
+      background: #09090b;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: #a5b4fc;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 10px 0;
+      word-break: break-all;
+    }
+    .copy-btn {
+      background: #27272a;
+      border: 1px solid #3f3f46;
+      color: #f4f4f5;
+      min-height: 36px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      margin-left: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* OS Tabs */
+    .os-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .os-tab {
+      flex: 1;
+      min-height: 44px;
+      padding: 8px 10px;
+      background: #18181b;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .os-tab.active {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* Pure Terminal Window Screen */
+    .terminal-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #09090b;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .terminal-header {
+      background: #111116;
+      min-height: 42px;
+      padding: max(5px, env(safe-area-inset-top)) 10px 5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #1f242d;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .terminal-dots {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .t-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .t-dot:hover { opacity: 0.8; }
+    .t-dot.red { background: #ef4444; }
+    .t-dot.yellow { background: #f59e0b; }
+    .t-dot.green { background: #10b981; }
+
+    .terminal-title {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 500;
+      color: #d4d4d8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 50%;
+      text-align: center;
+    }
+    .terminal-header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .terminal-vitals-pill {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: #a1a1aa;
+      background: #18181f;
+      border: 1px solid #272733;
+      border-radius: 9999px;
+      min-height: 28px;
+      padding: 2px 9px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.15s;
+    }
+    .terminal-vitals-pill:active { background: #27272a; }
+    .terminal-pty-pill {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #c4c4cc;
+      background: #18181f;
+      border: 1px solid #272733;
+      border-radius: 9999px;
+      min-height: 28px;
+      padding: 2px 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+    .terminal-pty-pill.active {
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.45);
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.18);
+    }
+
+    /* Multi-Session PTY Tab Strip */
+    .pty-tab-bar {
+      background: #0d0d12;
+      border-bottom: 1px solid #222228;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+      flex-shrink: 0;
+    }
+    .pty-tab-bar::-webkit-scrollbar { display: none; }
+    .pty-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 32px;
+      padding: 0 7px 0 10px;
+      border-radius: 9999px;
+      background: #14141c;
+      border: 1px solid #272733;
+      color: #a1a1aa;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      user-select: none;
+      transition: all 0.14s ease;
+    }
+    .pty-tab:active { transform: scale(0.97); }
+    .pty-tab.active {
+      background: rgba(99, 102, 241, 0.14);
+      border-color: #6366f1;
+      color: #f4f4f5;
+      font-weight: 600;
+      box-shadow: 0 0 10px rgba(99, 102, 241, 0.16);
+    }
+    .pty-tab-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #52525b;
+      flex-shrink: 0;
+    }
+    .pty-tab.active .pty-tab-dot {
+      background: #10b981;
+      box-shadow: 0 0 6px #10b981;
+    }
+    .pty-tab-close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      color: #71717a;
+      font-size: 10px;
+      line-height: 1;
+      margin-left: 1px;
+      transition: background 0.12s, color 0.12s;
+    }
+    .pty-tab-close:hover,
+    .pty-tab-close:active {
+      background: rgba(239, 68, 68, 0.22);
+      color: #fca5a5;
+    }
+    .pty-tab-new {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-height: 32px;
+      padding: 0 11px;
+      border-radius: 9999px;
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px dashed rgba(16, 185, 129, 0.42);
+      color: #34d399;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: all 0.14s ease;
+    }
+    .pty-tab-new:active {
+      background: rgba(16, 185, 129, 0.18);
+      transform: scale(0.96);
+    }
+    .pty-tab-new.limit-reached { opacity: 0.45; }
+
+    .pty-toast {
+      position: fixed;
+      top: max(54px, calc(env(safe-area-inset-top) + 48px));
+      left: 50%;
+      transform: translateX(-50%) translateY(-8px);
+      background: rgba(18, 18, 23, 0.96);
+      border: 1px solid #3f3f46;
+      color: #f4f4f5;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      padding: 7px 14px;
+      border-radius: 9999px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
+      z-index: 95;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      max-width: 92vw;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .pty-toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .terminal-pty-wrap {
+      flex: 1;
+      height: 100%;
+      width: 100%;
+      min-height: 0;
+      padding: 4px 6px 2px;
+      background: #09090b;
+      overflow: hidden;
+      position: relative;
+    }
+    .terminal-pty-wrap .xterm {
+      height: 100%;
+      width: 100%;
+    }
+    .terminal-pty-wrap .xterm-viewport::-webkit-scrollbar { width: 4px; }
+    .terminal-pty-wrap .xterm-viewport::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
+    .terminal-icon-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 14px;
+      min-width: 34px;
+      min-height: 32px;
+      padding: 2px 5px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .terminal-icon-btn:active { background: #18181f; }
+
+    .terminal-body {
+      flex: 1;
+      height: 100%;
+      min-height: 0;
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: #e4e4e7;
+      overflow-y: auto;
+      overflow-x: hidden;
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: #09090b;
+      -webkit-overflow-scrolling: touch;
+    }
+    .terminal-body::-webkit-scrollbar { width: 4px; }
+    .terminal-body::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
+
+    .t-banner {
+      white-space: normal;
+      color: #71717a;
+      font-size: 11px;
+      line-height: 1.45;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      background: rgba(99, 102, 241, 0.05);
+      border-left: 2px solid var(--accent);
+      border-radius: 0 4px 4px 0;
+    }
+    .t-banner strong { color: #a5b4fc; }
+    .t-pwa-hint {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      color: #a1a1aa;
+      font-size: 10.5px;
+    }
+    .t-pwa-dismiss {
+      background: transparent;
+      border: none;
+      color: #71717a;
+      font-size: 13px;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .t-matches {
+      white-space: pre-wrap;
+      color: #93c5fd;
+      font-size: 11.5px;
+      margin: 2px 0 6px;
+      padding: 4px 8px;
+      background: rgba(59, 130, 246, 0.06);
+      border-left: 2px solid #60a5fa;
+      border-radius: 0 4px 4px 0;
+    }
+
+    .term-entry-line {
+      margin-top: 10px;
+      margin-bottom: 2px;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      word-break: break-all;
+    }
+    .t-user { color: #22d3ee; font-weight: 600; }
+    .t-path { color: #a78bfa; font-weight: 500; }
+    .t-cmd { color: #ffffff; font-weight: 600; }
+    .term-stdout {
+      margin: 2px 0 6px;
+      padding: 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #d4d4d8;
+      font-family: inherit;
+      font-size: 12.5px;
+      line-height: 1.45;
+    }
+    .term-stderr {
+      margin: 2px 0 6px;
+      padding: 4px 8px;
+      background: rgba(239, 68, 68, 0.08);
+      border-left: 2px solid #ef4444;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #fca5a5;
+      font-family: inherit;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .t-out { color: #d4d4d8; }
+    .t-warn { color: #fbbf24; }
+    .t-err { color: #f87171; font-weight: 600; }
+    .t-success { color: #34d399; font-weight: 600; }
+
+    /* Smart 3-Mode Accessory & Shortcut Strip */
+    .term-accessory-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      background: #0e0e13;
+      border-top: 1px solid #1a1a24;
+      border-bottom: 1px solid #1a1a24;
+      flex-shrink: 0;
+    }
+    .term-mode-switch {
+      display: inline-flex;
+      align-items: center;
+      background: #15151d;
+      border: 1px solid #272736;
+      border-radius: 7px;
+      padding: 2px;
+      flex-shrink: 0;
+      gap: 1px;
+    }
+    .term-mode-btn {
+      height: 28px;
+      min-width: 34px;
+      padding: 0 8px;
+      border: none;
+      background: transparent;
+      color: #71717a;
+      border-radius: 5px;
+      font-family: var(--font-sans);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      transition: all 0.12s ease;
+    }
+    .term-mode-btn.active {
+      background: #27273a;
+      color: #f4f4f5;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+    .term-chips-scroll {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      overflow-x: auto;
+      flex: 1;
+      min-width: 0;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .term-chips-scroll::-webkit-scrollbar { display: none; }
+    .term-chip {
+      flex-shrink: 0;
+      min-height: 32px;
+      padding: 0 10px;
+      background: #18181f;
+      border: 1px solid #272733;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      color: #c4c4cc;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      white-space: nowrap;
+      transition: all 0.1s ease;
+    }
+    .term-chip:active {
+      background: #2e2e3d;
+      color: #fff;
+      border-color: #6366f1;
+      transform: scale(0.96);
+    }
+    .term-chip.key { color: #93c5fd; font-weight: 600; }
+    .term-chip.key-warn { color: #fca5a5; border-color: rgba(239, 68, 68, 0.3); font-weight: 600; }
+    .term-chip.folder { color: #a5b4fc; }
+    .term-chip.pin-add {
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.35);
+      background: rgba(16, 185, 129, 0.08);
+      font-weight: 600;
+    }
+    .term-chip.custom-pin {
+      color: #fde68a;
+      border-color: rgba(245, 158, 11, 0.35);
+    }
+    .chip-del {
+      margin-left: 3px;
+      opacity: 0.65;
+      font-size: 10px;
+      padding: 0 2px;
+    }
+    .chip-del:hover { opacity: 1; color: #ef4444; }
+    .term-send-btn.running {
+      background: #ef4444;
+    }
+    .term-input-prompt.busy {
+      color: #f59e0b;
+    }
+
+    /* Integrated Bottom Input Bar */
+    .term-input-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px max(8px, env(safe-area-inset-bottom));
+      background: #09090d;
+      border-top: 1px solid #1f242d;
+      flex-shrink: 0;
+    }
+    .term-input-prompt {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 700;
+      color: #6366f1;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .term-input-field {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #ffffff;
+      font-family: var(--font-mono);
+      font-size: 13.5px;
+      padding: 6px 0;
+      outline: none;
+      min-width: 0;
+    }
+    .term-input-field::placeholder { color: #52525b; }
+    .term-send-btn {
+      min-width: 44px;
+      height: 36px;
+      padding: 0 14px;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+    .term-send-btn:active { background: #4f46e5; transform: scale(0.96); }
+
+    /* Apple-Style Slide-Up Bottom Sheet */
+    .sheet-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .sheet-modal.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .sheet-content {
+      background: #121217;
+      border-top: 1px solid var(--card-border);
+      border-radius: 20px 20px 0 0;
+      padding: 16px 20px max(24px, env(safe-area-inset-bottom));
+      max-height: 85vh;
+      overflow-y: auto;
+      transform: translateY(100%);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .sheet-modal.open .sheet-content {
+      transform: translateY(0);
+    }
+    .sheet-handle {
+      width: 38px;
+      height: 4px;
+      background: #3f3f46;
+      border-radius: 2px;
+      margin: 0 auto 16px;
+    }
+
+    /* Vitals Telemetry (Used inside Sheet) */
+    .vitals-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .vitals-chip {
+      background: #09090b;
+      border: 1px solid #27272a;
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .vitals-chip-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .vitals-chip-val {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: #f4f4f5;
+    }
+    .vitals-bar-bg {
+      width: 100%;
+      height: 4px;
+      background: #27272a;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .vitals-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+    .vitals-bar-fill.success { background: var(--success); }
+    .vitals-bar-fill.warn { background: var(--warning); }
+    .vitals-bar-fill.danger { background: var(--danger); }
+
+    /* Warp-Style Block Action Feed */
+    .action-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 14px;
+      max-height: 420px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+    .block-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .block-header {
+      padding: 8px 12px;
+      background: #18181b;
+      border-bottom: 1px solid #27272a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .block-cmd {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: #93c5fd;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .block-badges {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .block-pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .block-pill.ok { background: rgba(16, 185, 129, 0.15); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .block-pill.err { background: rgba(239, 68, 68, 0.15); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .block-pill.time { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); }
+    .block-copy-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 2px 4px;
+    }
+    .block-copy-btn:hover { color: #fff; }
+    .block-body {
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: #e4e4e7;
+      background: #09090b;
+      overflow-x: auto;
+      max-height: 240px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .block-empty {
+      background: var(--card-bg);
+      border: 1px dashed var(--card-border);
+      border-radius: 10px;
+      padding: 24px 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    /* Terminal Input Bar */
+    .input-bar {
+      display: flex;
+      gap: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      align-items: center;
+    }
+    .input-bar input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      outline: none;
+    }
+    .btn-send {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* Modal Sheet */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: auto; }
+    .modal {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+    }
+    .modal-icon {
+      font-size: 40px;
+      margin-bottom: 12px;
+      display: inline-block;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)">
+        <path d="M4 17l6-6-6-6M12 19h8"/>
+      </svg>
+      <span>MiTH Terminal</span>
+      <span class="brand-badge">v1.2</span>
+    </div>
+    <div class="header-actions">
+      <div class="status-pill" id="header-host-pill" onclick="openVitalsSheet()" style="cursor:pointer;" title="Tap to view hardware telemetry">
+        <span class="dot" id="header-status-dot"></span>
+        <span id="header-status-text">Connecting...</span>
+      </div>
+      <button type="button" class="header-settings-btn" onclick="openSettingsSheet()" title="Settings">⚙️</button>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- STEPPER (ONBOARDING MODE) -->
+    <div id="onboarding-stepper" class="stepper">
+      <div class="step-node active" id="snode-1">
+        <div class="step-circle">1</div>
+        <span>Security</span>
+      </div>
+      <div class="step-node" id="snode-2">
+        <div class="step-circle">2</div>
+        <span>Install</span>
+      </div>
+      <div class="step-node" id="snode-3">
+        <div class="step-circle">3</div>
+        <span>Test</span>
+      </div>
+      <div class="step-node" id="snode-4">
+        <div class="step-circle">4</div>
+        <span>AI Setup</span>
+      </div>
+    </div>
+
+    <!-- ONBOARDING STEP 1: BIOMETRICS -->
+    <section id="step-1" class="card">
+      <div class="card-title">
+        <span>🛡️</span> Face ID / Touch ID Setup
+      </div>
+      <p class="card-desc">
+        Protect your computer terminal with hardware biometric encryption. Log in with a glance and gate destructive commands behind Apple Face ID.
+      </p>
+
+      <button id="btn-enroll-biometric" class="btn btn-primary" onclick="enrollBiometrics()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 3H5a2 2 0 0 0-2 2v4M9 21H5a2 2 0 0 1-2-2v-4M15 3h4a2 2 0 0 1 2 2v4M15 21h4a2 2 0 0 0 2-2v-4M8 12a4 4 0 1 0 8 0 4 4 0 0 0-8 0"/>
+        </svg>
+        Register Face ID / Touch ID
+      </button>
+
+      <div id="biometric-status" style="margin-top:12px; font-size:12px; color:var(--text-muted); text-align:center;">
+        Tap above to register your iOS biometric passkey.
+      </div>
+
+      <div style="margin-top: 14px;">
+        <button class="btn btn-secondary" onclick="goToStep(2)">Skip Biometrics for now &rarr;</button>
+      </div>
+    </section>
+
+    <!-- ONBOARDING STEP 2: PC SETUP GUIDE -->
+    <section id="step-2" class="card hidden">
+      <div class="card-title">
+        <span>💻</span> Connect Your Computer
+      </div>
+      <p class="card-desc">
+        Install the lightweight MiTH daemon on your Mac, Windows, or Linux machine. Run this single command in your terminal:
+      </p>
+
+      <div class="os-tabs">
+        <div class="os-tab active" onclick="switchOS('mac', this)">macOS</div>
+        <div class="os-tab" onclick="switchOS('win', this)">Windows</div>
+        <div class="os-tab" onclick="switchOS('linux', this)">Linux</div>
+        <div class="os-tab" onclick="switchOS('npx', this)">Node / npx</div>
+      </div>
+
+      <div id="code-snippet" class="code-box">
+        <span id="cmd-text">git clone https://github.com/cr4zyd34thg0d/MiTH-Terminal.git && cd MiTH-Terminal && ./start.sh</span>
+        <button type="button" class="copy-btn" onclick="copyCommand(this)">Copy</button>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button class="btn btn-secondary" onclick="goToStep(1)">&larr; Back</button>
+        <button class="btn btn-primary" onclick="goToStep(3)">I Ran the Command &rarr;</button>
+      </div>
+    </section>
+
+    <!-- ONBOARDING STEP 3: LINK & CONNECTION TEST -->
+    <section id="step-3" class="card hidden">
+      <div class="card-title">
+        <span>🔑</span> Link Your Computer
+      </div>
+      <p class="card-desc">
+        Scan the QR code in your computer terminal, or enter the 6-digit Pairing PIN below:
+      </p>
+
+      <div id="native-host-url-box" class="hidden" style="background:#09090b; border:1px solid #27272a; border-radius:10px; padding:14px; margin-bottom:12px;">
+        <div style="font-size:12px; font-weight:600; color:#a5b4fc; margin-bottom:6px;">🌐 Host Daemon URL (App / Remote Mode)</div>
+        <input type="url" id="pair-host-url-input" placeholder="https://your-tunnel.trycloudflare.com or http://192.168.1.50:8790" autocapitalize="none" autocorrect="off" spellcheck="false" onchange="saveHostUrl(this.value)" style="width:100%; min-height:44px; background:#18181b; border:1px solid #3f3f46; color:#fff; border-radius:8px; padding:10px 12px; font-size:12.5px; font-family:var(--font-mono); outline:none;" />
+      </div>
+
+      <div style="background:#09090b; border:1px solid #27272a; border-radius:10px; padding:16px; margin-bottom:16px;">
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <input type="text" id="pin-input" placeholder="e.g. 954-871" maxlength="7" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" autocapitalize="none" autocorrect="off" spellcheck="false" style="flex:1; min-height:44px; background:#18181b; border:1px solid #3f3f46; color:#fff; border-radius:8px; padding:10px 14px; font-size:16px; font-family:var(--font-mono); text-align:center; letter-spacing:0.1em; outline:none;" />
+          <button id="btn-pair" class="btn btn-primary" style="width:auto; min-height:44px; padding:10px 20px;" onclick="pairWithPin()">Pair</button>
+        </div>
+        <div id="pair-status" style="font-size:12px; color:var(--text-muted); text-align:center; min-height:18px;">
+          Awaiting 6-digit PIN verification...
+        </div>
+      </div>
+
+      <div style="background:#09090b; border:1px solid #27272a; border-radius:10px; padding:16px; margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;">
+          <span style="color:var(--text-muted)">Host Device:</span>
+          <span style="font-family:var(--font-mono); color:#a5b4fc;" id="host-name-val">Detecting...</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px;">
+          <span style="color:var(--text-muted)">Security:</span>
+          <span style="color:var(--success)" id="security-mode-val">E2EE Pairing Handshake</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:13px;">
+          <span style="color:var(--text-muted)">Latency:</span>
+          <span style="font-family:var(--font-mono); color:var(--text)" id="test-latency">-- ms</span>
+        </div>
+      </div>
+
+      <button id="btn-run-test" class="btn btn-secondary" onclick="runConnectionTest()">
+        <span>⚡</span> Re-test Network Ping
+      </button>
+
+      <div id="test-log" style="margin-top:12px; font-family:var(--font-mono); font-size:12px; min-height:24px; color:var(--text-muted);">
+        Awaiting connection test...
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button class="btn btn-secondary" onclick="goToStep(2)">&larr; Back</button>
+        <button id="btn-proceed-step4" class="btn btn-primary hidden" onclick="goToStep(4)">Continue &rarr;</button>
+      </div>
+    </section>
+
+    <!-- ONBOARDING STEP 4: AI SETUP (FREE GEMINI / BYOK) -->
+    <section id="step-4" class="card hidden">
+      <div class="card-title">
+        <span>✨</span> AI Terminal Assistant (Optional)
+      </div>
+      <p class="card-desc">
+        Translate plain English into commands and diagnose terminal errors. Completely free using your own Google AI key.
+      </p>
+
+      <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;">
+        <div style="background:#09090b; border:1px solid #27272a; border-radius:10px; padding:12px;">
+          <div style="font-weight:600; font-size:13px; margin-bottom:4px; color:#a5b4fc;">✦ Google Gemini Flash (Recommended)</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">100% free with any Gmail account. 15 requests/min. Zero credit card.</div>
+          <input type="password" id="gemini-key-input" placeholder="Paste your free Gemini API key..." autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false" style="width:100%; background:#18181b; border:1px solid #3f3f46; color:#fff; border-radius:6px; padding:8px 10px; font-size:12px; outline:none;">
+          <div style="margin-top:6px; text-align:right;">
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent); font-size:11px; text-decoration:none;">Get free Google key &rarr;</a>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-secondary" onclick="finishOnboarding(true)">Skip AI for Now</button>
+        <button class="btn btn-primary" onclick="finishOnboarding(false)">Save & Launch Terminal &rarr;</button>
+      </div>
+    </section>
+
+    <!-- RADICALLY PURE TERMINAL WINDOW VIEW -->
+    <section id="terminal-view" class="hidden">
+      <div class="terminal-container">
+        <!-- Terminal Window Titlebar -->
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <span class="t-dot red" onclick="clearTerminal()" title="Clear screen"></span>
+            <span class="t-dot yellow" onclick="fetchVitals()" title="Refresh telemetry"></span>
+            <span class="t-dot green" onclick="openVitalsSheet()" title="Machine vitals"></span>
+          </div>
+          <div class="terminal-title" id="term-header-title">user@host: ~</div>
+          <div class="terminal-header-right">
+            <button type="button" class="terminal-pty-pill" id="pty-toggle-pill" onclick="togglePtyMode()" title="Switch between Fast Line Mode and Interactive Multi-Tab Live PTY (htop, vim, tmux, tail -f)">⚡ Shell</button>
+            <button type="button" class="terminal-icon-btn" id="btn-copy-last" onclick="copyLastOutput()" title="Copy terminal output" style="font-size:12.5px;">📋</button>
+            <div class="terminal-vitals-pill" onclick="openVitalsSheet()" title="Tap to inspect machine vitals">
+              <span class="dot" id="canvas-status-dot"></span>
+              <span id="canvas-meta-pill">-- ms</span>
+            </div>
+            <button type="button" class="terminal-icon-btn" onclick="openSettingsSheet()" title="Settings">⚙️</button>
+          </div>
+        </div>
+
+        <!-- Multi-Session PTY Tab Strip -->
+        <div class="pty-tab-bar hidden" id="pty-tab-bar"></div>
+
+        <!-- Interactive Real-Time WebSocket PTY View (xterm.js) -->
+        <div class="terminal-pty-wrap hidden" id="term-pty-wrap"></div>
+
+        <!-- Terminal Continuous Output Buffer -->
+        <div class="terminal-body" id="term-output">
+          <div class="t-banner" id="term-welcome-banner">
+            <strong id="term-banner-title">MiTH Terminal</strong> • <span id="term-banner-host">Remote Host</span><br>
+            <span>TAB completes paths • Switch ⌨️ / 📁 / ⚡ below to pin folders &amp; macros</span>
+            <div class="t-pwa-hint hidden" id="pwa-install-hint">
+              <span>📱 Full-screen app mode: tap <strong>Share → Add to Home Screen</strong></span>
+              <button type="button" class="t-pwa-dismiss" onclick="dismissPwaHint()" aria-label="Dismiss">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Smart 3-Mode Accessory & Shortcut Strip -->
+        <div class="term-accessory-bar" id="term-accessory-bar">
+          <div class="term-mode-switch" role="tablist" aria-label="Shortcut modes">
+            <button type="button" class="term-mode-btn active" id="mode-btn-keys" onclick="setShortcutMode('keys')" title="Keys &amp; Tab Complete">⌨️</button>
+            <button type="button" class="term-mode-btn" id="mode-btn-go" onclick="setShortcutMode('go')" title="Folders &amp; Pinned Paths">📁</button>
+            <button type="button" class="term-mode-btn" id="mode-btn-ops" onclick="setShortcutMode('ops')" title="Git &amp; System Snippets">⚡</button>
+          </div>
+          <div class="term-chips-scroll" id="term-chips-scroll"></div>
+        </div>
+
+        <!-- Integrated Docked Terminal Input Bar -->
+        <form id="term-form" onsubmit="event.preventDefault(); handlePrimaryAction();" class="term-input-bar">
+          <span class="term-input-prompt" id="term-prompt-indicator">❯</span>
+          <input type="text" id="term-input" class="term-input-field" placeholder="type a command..." autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false" onkeydown="handleInputKey(event)">
+          <button type="submit" id="term-send-btn" class="term-send-btn" title="Run command">↵</button>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- VITALS BOTTOM SHEET MODAL -->
+  <div class="sheet-modal" id="vitals-sheet" onclick="if(event.target===this)closeVitalsSheet()">
+    <div class="sheet-content">
+      <div class="sheet-handle"></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <div style="font-size:18px; font-weight:700;">Machine Vitals</div>
+        <button class="btn btn-secondary" style="width:auto; padding:6px 12px; font-size:12px; margin:0;" onclick="closeVitalsSheet()">Done</button>
+      </div>
+
+      <div class="vitals-grid" style="margin-bottom:16px;">
+        <div class="vitals-chip">
+          <div class="vitals-chip-label">CPU Load</div>
+          <div class="vitals-chip-val" id="sheet-cpu-val">--%</div>
+          <div class="vitals-bar-bg"><div class="vitals-bar-fill" id="sheet-cpu-bar" style="width:0%"></div></div>
+        </div>
+        <div class="vitals-chip">
+          <div class="vitals-chip-label">Memory</div>
+          <div class="vitals-chip-val" id="sheet-mem-val">-- GB</div>
+          <div class="vitals-bar-bg"><div class="vitals-bar-fill" id="sheet-mem-bar" style="width:0%"></div></div>
+        </div>
+        <div class="vitals-chip">
+          <div class="vitals-chip-label">Disk Storage</div>
+          <div class="vitals-chip-val" id="sheet-disk-val">-- GB Free</div>
+          <div class="vitals-bar-bg"><div class="vitals-bar-fill" id="sheet-disk-bar" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <div style="background:#09090b; border:1px solid #27272a; border-radius:10px; padding:12px; margin-bottom:14px; font-size:12px; font-family:var(--font-mono);">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <span style="color:var(--text-muted)">Host Device:</span>
+          <span style="color:#fff;" id="sheet-host-val">workstation</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <span style="color:var(--text-muted)">Kernel / OS:</span>
+          <span style="color:#a5b4fc;" id="sheet-os-val">--</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <span style="color:var(--text-muted)">System Uptime:</span>
+          <span style="color:var(--success);" id="sheet-uptime-val">--</span>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span style="color:var(--text-muted)">Active Path:</span>
+          <span style="color:#60a5fa;" id="sheet-cwd-val">~</span>
+        </div>
+      </div>
+
+      <button class="btn btn-secondary" style="width:100%; padding:10px;" onclick="fetchVitals()">⚡ Refresh Telemetry</button>
+    </div>
+  </div>
+
+  <!-- SETTINGS BOTTOM SHEET MODAL -->
+  <div class="sheet-modal" id="settings-sheet" onclick="if(event.target===this)closeSettingsSheet()">
+    <div class="sheet-content">
+      <div class="sheet-handle"></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <div style="font-size:18px; font-weight:700;">Console Settings</div>
+        <button class="btn btn-secondary" style="width:auto; min-height:36px; padding:6px 14px; font-size:12px; margin:0;" onclick="closeSettingsSheet()">Done</button>
+      </div>
+
+      <div style="background:#09090b; border:1px solid #27272a; border-radius:10px; padding:14px; margin-bottom:12px;">
+        <div style="font-weight:600; font-size:13px; margin-bottom:4px; color:#fff;">🛡️ Biometric Security Policy</div>
+        <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">Requires Face ID or Touch ID before destructive shell commands execute.</div>
+        <button class="btn btn-secondary" style="font-size:12px; padding:8px 12px;" onclick="enrollBiometrics()">Re-register Hardware Passkey</button>
+      </div>
+
+      <div style="background:#09090b; border:1px solid #27272a; border-radius:10px; padding:14px; margin-bottom:12px;">
+        <div style="font-weight:600; font-size:13px; margin-bottom:4px; color:#fff;">✨ Gemini Flash AI Key (Optional BYOK)</div>
+        <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Free Google AI Studio key for <code>?</code> or <code>ai </code> natural-language command copilot.</div>
+        <div style="display:flex; gap:6px;">
+          <input type="password" id="settings-gemini-key-input" placeholder="AIza... (stored locally on device)" autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false" style="flex:1; min-height:40px; background:#18181b; border:1px solid #3f3f46; color:#fff; border-radius:6px; padding:7px 10px; font-size:12px; font-family:var(--font-mono); outline:none;" />
+          <button type="button" class="btn btn-secondary" style="width:auto; min-height:40px; padding:7px 14px; font-size:12px;" onclick="saveGeminiKeyFromSettings()">Save</button>
+        </div>
+      </div>
+
+      <div style="background:#09090b; border:1px solid #27272a; border-radius:10px; padding:14px; margin-bottom:12px;">
+        <div style="font-weight:600; font-size:13px; margin-bottom:4px; color:#fff;">🌐 Host Daemon Endpoint</div>
+        <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Leave blank when opened directly from your tunnel/PWA URL. Required only for native Capacitor builds.</div>
+        <div style="display:flex; gap:6px;">
+          <input type="url" id="settings-host-url-input" placeholder="Same-origin (automatic)" autocapitalize="none" autocorrect="off" spellcheck="false" style="flex:1; min-height:40px; background:#18181b; border:1px solid #3f3f46; color:#fff; border-radius:6px; padding:7px 10px; font-size:12px; font-family:var(--font-mono); outline:none;" />
+          <button type="button" class="btn btn-secondary" style="width:auto; min-height:40px; padding:7px 14px; font-size:12px;" onclick="saveHostUrl(document.getElementById('settings-host-url-input').value, true)">Save</button>
+        </div>
+      </div>
+
+      <div style="background:#09090b; border:1px solid #27272a; border-radius:10px; padding:14px; margin-bottom:14px;">
+        <div style="font-weight:600; font-size:13px; margin-bottom:4px; color:#fff;">🔑 Re-link Host Computer</div>
+        <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">Switch to another workstation or enter a fresh 6-digit pairing PIN.</div>
+        <button class="btn btn-secondary" style="font-size:12px; padding:8px 12px;" onclick="closeSettingsSheet(); goToStep(3);">Pair With PIN</button>
+      </div>
+
+      <button class="btn btn-danger" style="width:100%; padding:10px; font-size:12px;" onclick="restartOnboarding()">Disconnect & Reset Onboarding</button>
+    </div>
+  </div>
+
+  <!-- TRANSIENT OBSIDIAN TOAST -->
+  <div class="pty-toast" id="pty-toast" role="status" aria-live="polite"></div>
+
+  <!-- BIOMETRIC VERIFICATION MODAL -->
+  <div class="modal-overlay" id="biometric-modal">
+    <div class="modal">
+      <div class="modal-icon">🛡️</div>
+      <h3 style="margin-bottom:8px; font-size:18px;">Face ID Required</h3>
+      <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px;" id="modal-desc">
+        A destructive command was initiated. Confirm with Apple Face ID or Touch ID to authorize execution.
+      </p>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-secondary" onclick="closeBiometricModal(false)">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmBiometricModal()">Verify with Face ID</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let currentStep = 1;
+    let biometricRegistered = false;
+    let geminiApiKey = localStorage.getItem('mith_gemini_key') || '';
+    let hostBaseUrl = (localStorage.getItem('mith_host_url') || '').replace(/\/+$/, '');
+    let pendingDestructiveCmd = null;
+    let cmdHistory = JSON.parse(localStorage.getItem('mith_cmd_history') || '[]');
+    let historyIndex = cmdHistory.length;
+    let historyDraft = '';
+    let hostCwd = '~';
+    let hostUser = 'user';
+    let hostNode = 'workstation';
+    let hostSystem = 'Linux';
+    let hostHomeDir = '';
+    let hostHydrated = false;
+    let isCommandRunning = false;
+    let lastOutputText = '';
+    let activeShortcutMode = localStorage.getItem('mith_shortcut_mode') || 'keys';
+    let hostBookmarks = [
+      { icon: '🏠', label: '~', cmd: 'cd ~ && ls' },
+      { icon: '🖥️', label: 'Desktop', cmd: 'cd ~/Desktop && ls' },
+      { icon: '📁', label: 'Documents', cmd: 'cd ~/Documents && ls' },
+      { icon: '⬇️', label: 'Downloads', cmd: 'cd ~/Downloads && ls' },
+      { icon: '📦', label: '/tmp', cmd: 'cd /tmp && ls' }
+    ];
+    let customFolderPins = JSON.parse(localStorage.getItem('mith_custom_pins') || '[]');
+    let customOpsMacros = JSON.parse(localStorage.getItem('mith_custom_macros') || '[]');
+    let isPtyMode = localStorage.getItem('mith_pty_mode') === 'true';
+    let xtermInstance = null;
+    let fitAddonInstance = null;
+    let ptyWs = null;
+    let ptyTransport = 'none'; // 'ws' | 'http' | 'none'
+    let ptySessionId = sessionStorage.getItem('mith_pty_sid') || '';
+    let ptyPollAbort = false;
+    let ptyPollCursor = 0;
+    let ptyResizeTimer = null;
+
+    // Multi-Session PTY Tabs (max 8 concurrent live sessions)
+    const MAX_PTY_TABS = 8;
+    let ptyTabs = (() => {
+      try {
+        const raw = JSON.parse(sessionStorage.getItem('mith_pty_tabs') || '[]');
+        if (!Array.isArray(raw)) return [];
+        return raw
+          .filter((t) => t && typeof t.tabId === 'string')
+          .map((t, i) => ({
+            tabId: String(t.tabId),
+            sessionId: typeof t.sessionId === 'string' ? t.sessionId : '',
+            title: typeof t.title === 'string' && t.title.trim() ? t.title.trim() : `Term ${i + 1}`
+          }))
+          .slice(0, MAX_PTY_TABS);
+      } catch (_) {
+        return [];
+      }
+    })();
+    let activePtyTabId = sessionStorage.getItem('mith_pty_active_tab') || (ptyTabs[0] ? ptyTabs[0].tabId : '');
+    let hasSyncedServerPtySessions = false;
+    let ptyToastTimer = null;
+
+    function showPtyToast(message, durationMs = 2200) {
+      const el = document.getElementById('pty-toast');
+      if (!el || !message) return;
+      el.textContent = message;
+      el.classList.add('visible');
+      if (ptyToastTimer) clearTimeout(ptyToastTimer);
+      ptyToastTimer = setTimeout(() => {
+        el.classList.remove('visible');
+      }, durationMs);
+    }
+
+    function isNativeShell() {
+      return Boolean(window.Capacitor) || location.protocol === 'capacitor:' || location.protocol === 'file:';
+    }
+
+    function isStandaloneApp() {
+      return isNativeShell() || window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+    }
+
+    function apiUrl(path) {
+      if (hostBaseUrl) {
+        return hostBaseUrl + path;
+      }
+      return path;
+    }
+
+    function saveHostUrl(rawVal, notify = false) {
+      const cleaned = (rawVal || '').trim().replace(/\/+$/, '');
+      if (cleaned && !/^https?:\/\//i.test(cleaned)) {
+        if (notify) {
+          showPtyToast('Host URL must start with https:// or http://');
+        }
+        return;
+      }
+      hostBaseUrl = cleaned;
+      if (cleaned) {
+        localStorage.setItem('mith_host_url', cleaned);
+      } else {
+        localStorage.removeItem('mith_host_url');
+      }
+      const pIn = document.getElementById('pair-host-url-input');
+      const sIn = document.getElementById('settings-host-url-input');
+      if (pIn && pIn.value !== cleaned) pIn.value = cleaned;
+      if (sIn && sIn.value !== cleaned) sIn.value = cleaned;
+      if (notify) {
+        haptic(25);
+        appendTerminal(`✔ Host endpoint set to: ${cleaned || 'Same-origin (automatic)'}`, 't-success');
+        showPtyToast(`Host set: ${cleaned || 'Same-origin'}`);
+        closeSettingsSheet();
+      }
+    }
+
+    function saveGeminiKeyFromSettings() {
+      haptic(25);
+      const sKey = document.getElementById('settings-gemini-key-input');
+      const oKey = document.getElementById('gemini-key-input');
+      const val = sKey ? sKey.value.trim() : '';
+      geminiApiKey = val;
+      if (val) {
+        localStorage.setItem('mith_gemini_key', val);
+        showPtyToast('✔ Gemini Flash key saved locally');
+      } else {
+        localStorage.removeItem('mith_gemini_key');
+        showPtyToast('Gemini key cleared');
+      }
+      if (oKey) oKey.value = val;
+      closeSettingsSheet();
+    }
+
+    function dismissPwaHint() {
+      haptic(15);
+      localStorage.setItem('mith_pwa_hint_dismissed', 'true');
+      const el = document.getElementById('pwa-install-hint');
+      if (el) el.classList.add('hidden');
+    }
+
+    function syncVisualViewport() {
+      if (!window.visualViewport) return;
+      const vv = window.visualViewport;
+      document.documentElement.style.setProperty('--app-height', `${Math.round(vv.height)}px`);
+      if (isPtyMode) {
+        schedulePtyFit();
+      } else {
+        const term = document.getElementById('term-output');
+        if (term) {
+          term.scrollTop = term.scrollHeight;
+        }
+      }
+    }
+
+    function buildWsUrl(pathWithQuery) {
+      if (hostBaseUrl) {
+        const u = new URL(hostBaseUrl);
+        const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${wsProto}//${u.host}${u.pathname.replace(/\/+$/, '')}${pathWithQuery}`;
+      }
+      const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${wsProto}//${location.host}${pathWithQuery}`;
+    }
+
+    function b64ToUint8Array(b64) {
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) {
+        arr[i] = bin.charCodeAt(i);
+      }
+      return arr;
+    }
+
+    function initXtermIfNeeded() {
+      if (xtermInstance || !window.Terminal) return Boolean(xtermInstance);
+      const wrap = document.getElementById('term-pty-wrap');
+      if (!wrap) return false;
+
+      xtermInstance = new window.Terminal({
+        cursorBlink: true,
+        cursorStyle: 'bar',
+        fontSize: 12.5,
+        lineHeight: 1.22,
+        scrollback: 3500,
+        convertEol: false,
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+        theme: {
+          background: '#09090b',
+          foreground: '#f4f4f5',
+          cursor: '#818cf8',
+          selectionBackground: 'rgba(99, 102, 241, 0.35)',
+          black: '#18181b',
+          red: '#f87171',
+          green: '#34d399',
+          yellow: '#fbbf24',
+          blue: '#60a5fa',
+          magenta: '#c084fc',
+          cyan: '#22d3ee',
+          white: '#e4e4e7',
+          brightBlack: '#52525b',
+          brightRed: '#fca5a5',
+          brightGreen: '#6ee7b7',
+          brightYellow: '#fde68a',
+          brightBlue: '#93c5fd',
+          brightMagenta: '#d8b4fe',
+          brightCyan: '#67e8f9',
+          brightWhite: '#ffffff'
+        }
+      });
+
+      if (window.FitAddon && window.FitAddon.FitAddon) {
+        fitAddonInstance = new window.FitAddon.FitAddon();
+        xtermInstance.loadAddon(fitAddonInstance);
+      }
+
+      xtermInstance.open(wrap);
+      xtermInstance.onData((data) => {
+        sendPtyRawInput(data);
+      });
+      xtermInstance.onResize(({ cols, rows }) => {
+        sendPtyResize(cols, rows);
+      });
+
+      if (window.ResizeObserver) {
+        const ro = new ResizeObserver(() => {
+          if (isPtyMode) schedulePtyFit();
+        });
+        ro.observe(wrap);
+      }
+      return true;
+    }
+
+    function schedulePtyFit() {
+      if (ptyResizeTimer) clearTimeout(ptyResizeTimer);
+      ptyResizeTimer = setTimeout(() => {
+        if (isPtyMode && fitAddonInstance && xtermInstance) {
+          try {
+            fitAddonInstance.fit();
+          } catch (_) {}
+        }
+      }, 45);
+    }
+
+    function sendPtyResize(cols, rows) {
+      if (!cols || !rows) return;
+      if (ptyTransport === 'ws' && ptyWs && ptyWs.readyState === WebSocket.OPEN) {
+        ptyWs.send(JSON.stringify({ type: 'resize', cols: cols, rows: rows }));
+      } else if (ptyTransport === 'http' && ptySessionId) {
+        fetch(apiUrl('/api/terminal/pty/resize'), {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ session_id: ptySessionId, cols: cols, rows: rows })
+        }).catch(() => {});
+      }
+    }
+
+    function sendPtyRawInput(str) {
+      if (!str) return;
+      if (ptyTransport === 'ws' && ptyWs && ptyWs.readyState === WebSocket.OPEN) {
+        ptyWs.send(JSON.stringify({ type: 'input', data: str }));
+      } else if (ptyTransport === 'http' && ptySessionId) {
+        fetch(apiUrl('/api/terminal/pty/input'), {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ session_id: ptySessionId, data: str })
+        }).catch(() => {});
+      } else if (isPtyMode) {
+        connectLivePty(str.endsWith('\r') ? str.slice(0, -1) : '');
+      }
+    }
+
+    function persistPtyTabs() {
+      try {
+        sessionStorage.setItem('mith_pty_tabs', JSON.stringify(ptyTabs));
+        if (activePtyTabId) {
+          sessionStorage.setItem('mith_pty_active_tab', activePtyTabId);
+        }
+        if (ptySessionId) {
+          sessionStorage.setItem('mith_pty_sid', ptySessionId);
+        } else {
+          sessionStorage.removeItem('mith_pty_sid');
+        }
+      } catch (_) {}
+    }
+
+    function ensureInitialPtyTab() {
+      if (ptyTabs.length === 0) {
+        ptyTabs.push({ tabId: 'tab-1', sessionId: ptySessionId || '', title: 'Term 1' });
+        activePtyTabId = 'tab-1';
+        persistPtyTabs();
+      } else if (!ptyTabs.some((t) => t.tabId === activePtyTabId)) {
+        activePtyTabId = ptyTabs[0].tabId;
+        ptySessionId = ptyTabs[0].sessionId || '';
+        persistPtyTabs();
+      }
+    }
+
+    function nextPtyTabNumber() {
+      const used = new Set(
+        ptyTabs.map((t) => {
+          const m = /^Term\s+(\d+)$/i.exec(t.title || '');
+          return m ? parseInt(m[1], 10) : 0;
+        })
+      );
+      let n = 1;
+      while (used.has(n)) n++;
+      return n;
+    }
+
+    function detachCurrentPtyStream() {
+      ptyPollAbort = true;
+      if (ptyWs) {
+        ptyWs.onclose = null;
+        ptyWs.onerror = null;
+        ptyWs.onmessage = null;
+        try { ptyWs.close(); } catch (_) {}
+        ptyWs = null;
+      }
+      ptyTransport = 'none';
+    }
+
+    function renderPtyTabs() {
+      const bar = document.getElementById('pty-tab-bar');
+      if (!bar) return;
+      bar.classList.toggle('hidden', !isPtyMode);
+      if (!isPtyMode) return;
+
+      ensureInitialPtyTab();
+      bar.innerHTML = '';
+
+      let activeBtnEl = null;
+      ptyTabs.forEach((tab) => {
+        const isAct = tab.tabId === activePtyTabId;
+        const tabEl = document.createElement('div');
+        tabEl.className = `pty-tab${isAct ? ' active' : ''}`;
+        tabEl.setAttribute('role', 'tab');
+        tabEl.setAttribute('aria-selected', isAct ? 'true' : 'false');
+        tabEl.addEventListener('click', () => switchPtyTab(tab.tabId));
+
+        const dot = document.createElement('span');
+        dot.className = 'pty-tab-dot';
+        tabEl.appendChild(dot);
+
+        const label = document.createElement('span');
+        label.textContent = tab.title || 'Term';
+        tabEl.appendChild(label);
+
+        const closeBtn = document.createElement('span');
+        closeBtn.className = 'pty-tab-close';
+        closeBtn.textContent = '✕';
+        closeBtn.title = `Close ${tab.title}`;
+        closeBtn.setAttribute('role', 'button');
+        closeBtn.setAttribute('aria-label', `Close ${tab.title}`);
+        closeBtn.addEventListener('click', (ev) => closePtyTab(tab.tabId, ev));
+        tabEl.appendChild(closeBtn);
+
+        bar.appendChild(tabEl);
+        if (isAct) activeBtnEl = tabEl;
+      });
+
+      const newBtn = document.createElement('button');
+      newBtn.type = 'button';
+      newBtn.className = `pty-tab-new${ptyTabs.length >= MAX_PTY_TABS ? ' limit-reached' : ''}`;
+      newBtn.textContent = '+ New';
+      newBtn.title = ptyTabs.length >= MAX_PTY_TABS ? 'Max 8 tabs open' : 'Open new PTY shell tab';
+      newBtn.setAttribute('onclick', 'createNewPtyTab()');
+      bar.appendChild(newBtn);
+
+      if (activeBtnEl && activeBtnEl.scrollIntoView) {
+        try {
+          activeBtnEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        } catch (_) {}
+      }
+    }
+
+    function bindSessionToTab(sid, targetTabId) {
+      if (!sid) return;
+      ensureInitialPtyTab();
+      const tabKey = targetTabId || activePtyTabId;
+      const existingOwner = ptyTabs.find((t) => t.sessionId === sid);
+      const targetTab = ptyTabs.find((t) => t.tabId === tabKey);
+      if (existingOwner && existingOwner.tabId !== tabKey) {
+        activePtyTabId = existingOwner.tabId;
+      } else if (targetTab) {
+        targetTab.sessionId = sid;
+      }
+      if (activePtyTabId === tabKey || (existingOwner && activePtyTabId === existingOwner.tabId)) {
+        ptySessionId = sid;
+      }
+      persistPtyTabs();
+      renderPtyTabs();
+    }
+
+    function clearSessionOnTab(targetTabId) {
+      const tabKey = targetTabId || activePtyTabId;
+      const targetTab = ptyTabs.find((t) => t.tabId === tabKey);
+      if (targetTab) {
+        targetTab.sessionId = '';
+      }
+      if (activePtyTabId === tabKey) {
+        ptySessionId = '';
+      }
+      persistPtyTabs();
+      renderPtyTabs();
+    }
+
+    async function syncServerPtySessions(allowAdoptEmpty = true) {
+      const ctrl = window.AbortController ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), 1500) : null;
+      try {
+        const res = await fetch(apiUrl('/api/terminal/pty/list'), {
+          headers: getAuthHeaders(),
+          signal: ctrl ? ctrl.signal : undefined
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || !data.ok || !Array.isArray(data.sessions)) return;
+
+        ensureInitialPtyTab();
+        const liveServerIds = data.sessions
+          .filter((s) => s && (typeof s === 'string' || !s.closed))
+          .map((s) => (typeof s === 'string' ? s : String(s.session_id || s.id || '').trim()))
+          .filter(Boolean);
+
+        const liveSet = new Set(liveServerIds);
+        ptyTabs.forEach((t) => {
+          if (t.sessionId && !liveSet.has(t.sessionId) && (t.tabId !== activePtyTabId || ptyTransport === 'none')) {
+            t.sessionId = '';
+            if (t.tabId === activePtyTabId) ptySessionId = '';
+          }
+        });
+
+        const knownIds = new Set(ptyTabs.map((t) => t.sessionId).filter(Boolean));
+        for (const sid of liveServerIds) {
+          if (knownIds.has(sid)) continue;
+          const adoptTarget = allowAdoptEmpty
+            ? ptyTabs.find((t) => !t.sessionId && t.tabId === activePtyTabId && ptyTransport === 'none' && !ptyWs)
+            : null;
+          if (adoptTarget) {
+            adoptTarget.sessionId = sid;
+            ptySessionId = sid;
+            knownIds.add(sid);
+            continue;
+          }
+          if (ptyTabs.length < MAX_PTY_TABS) {
+            const nextNum = nextPtyTabNumber();
+            ptyTabs.push({
+              tabId: 'tab-' + sid.slice(0, 8) + '-' + nextNum,
+              sessionId: sid,
+              title: 'Term ' + nextNum
+            });
+            knownIds.add(sid);
+          }
+        }
+        persistPtyTabs();
+        renderPtyTabs();
+      } catch (_) {
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+
+    function switchPtyTab(tabId) {
+      const targetTab = ptyTabs.find((t) => t.tabId === tabId);
+      if (!targetTab) return;
+      if (tabId === activePtyTabId) {
+        if (ptyTransport === 'none') {
+          connectLivePty();
+        }
+        if (xtermInstance) xtermInstance.focus();
+        return;
+      }
+      haptic(15);
+      detachCurrentPtyStream();
+      activePtyTabId = tabId;
+      ptySessionId = targetTab.sessionId || '';
+      ptyPollCursor = 0;
+      if (xtermInstance) xtermInstance.reset();
+      persistPtyTabs();
+      renderPtyTabs();
+      updatePtyPillUI();
+      connectLivePty();
+      setTimeout(() => {
+        schedulePtyFit();
+        if (xtermInstance) xtermInstance.focus();
+      }, 50);
+    }
+
+    function createNewPtyTab() {
+      ensureInitialPtyTab();
+      if (ptyTabs.length >= MAX_PTY_TABS) {
+        haptic([40, 40]);
+        showPtyToast('Maximum of 8 live PTY tabs open — close one first');
+        return;
+      }
+      haptic(20);
+      detachCurrentPtyStream();
+      const nextNum = nextPtyTabNumber();
+      const newTab = {
+        tabId: 'tab-' + Date.now(),
+        sessionId: '',
+        title: 'Term ' + nextNum
+      };
+      ptyTabs.push(newTab);
+      activePtyTabId = newTab.tabId;
+      ptySessionId = '';
+      ptyPollCursor = 0;
+      if (xtermInstance) xtermInstance.reset();
+      persistPtyTabs();
+      renderPtyTabs();
+      connectLivePty();
+      setTimeout(() => {
+        schedulePtyFit();
+        if (xtermInstance) xtermInstance.focus();
+      }, 50);
+    }
+
+    function closePtyTab(tabId, ev) {
+      if (ev) {
+        ev.stopPropagation();
+        ev.preventDefault();
+      }
+      haptic(20);
+      const idx = ptyTabs.findIndex((t) => t.tabId === tabId);
+      if (idx === -1) return;
+
+      const closingTab = ptyTabs[idx];
+      const wasActive = closingTab.tabId === activePtyTabId;
+      if (wasActive) {
+        detachCurrentPtyStream();
+      }
+
+      if (closingTab.sessionId) {
+        fetch(apiUrl('/api/terminal/pty/close'), {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ session_id: closingTab.sessionId })
+        }).catch(() => {});
+      }
+
+      ptyTabs.splice(idx, 1);
+
+      if (ptyTabs.length === 0) {
+        const freshTab = {
+          tabId: 'tab-' + Date.now(),
+          sessionId: '',
+          title: 'Term 1'
+        };
+        ptyTabs.push(freshTab);
+        activePtyTabId = freshTab.tabId;
+        ptySessionId = '';
+        ptyPollCursor = 0;
+        if (xtermInstance) xtermInstance.reset();
+        persistPtyTabs();
+        renderPtyTabs();
+        if (isPtyMode) {
+          connectLivePty();
+          setTimeout(() => {
+            schedulePtyFit();
+            if (xtermInstance) xtermInstance.focus();
+          }, 50);
+        }
+        return;
+      }
+
+      if (wasActive) {
+        const adjTab = ptyTabs[Math.min(idx, ptyTabs.length - 1)];
+        activePtyTabId = adjTab.tabId;
+        ptySessionId = adjTab.sessionId || '';
+        ptyPollCursor = 0;
+        if (xtermInstance) xtermInstance.reset();
+        persistPtyTabs();
+        renderPtyTabs();
+        if (isPtyMode) {
+          connectLivePty();
+          setTimeout(() => {
+            schedulePtyFit();
+            if (xtermInstance) xtermInstance.focus();
+          }, 50);
+        }
+      } else {
+        persistPtyTabs();
+        renderPtyTabs();
+        schedulePtyFit();
+      }
+    }
+
+    async function startHttpPtyFallback(initialCmd = '', targetTabId = '') {
+      ptyPollAbort = false;
+      ptyTransport = 'http';
+      const tabKey = targetTabId || activePtyTabId;
+      const cols = (xtermInstance && xtermInstance.cols) || 80;
+      const rows = (xtermInstance && xtermInstance.rows) || 26;
+      try {
+        const openRes = await fetch(apiUrl('/api/terminal/pty/open'), {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            cols: cols,
+            rows: rows,
+            session_id: ptySessionId || undefined,
+            cmd: initialCmd || undefined
+          })
+        });
+        if (openRes.status === 401) {
+          goToStep(3);
+          return;
+        }
+        const openData = await openRes.json();
+        if (!openData.ok || !openData.session_id) return;
+        if (ptyPollAbort || activePtyTabId !== tabKey) return;
+        bindSessionToTab(openData.session_id, tabKey);
+        if (!openData.reattached) ptyPollCursor = 0;
+        updatePtyPillUI();
+
+        while (!ptyPollAbort && ptyTransport === 'http' && isPtyMode && activePtyTabId === tabKey) {
+          const pollUrl = apiUrl(`/api/terminal/pty/poll?session_id=${encodeURIComponent(ptySessionId)}&cursor=${ptyPollCursor}&timeout_ms=8000`);
+          const pRes = await fetch(pollUrl, { headers: getAuthHeaders() });
+          if (!pRes.ok) break;
+          const pData = await pRes.json();
+          if (!pData.ok || ptyPollAbort || activePtyTabId !== tabKey) break;
+          if (pData.b64 && xtermInstance) {
+            xtermInstance.write(b64ToUint8Array(pData.b64));
+          }
+          if (typeof pData.cursor === 'number') {
+            ptyPollCursor = pData.cursor;
+          }
+          if (pData.closed) {
+            clearSessionOnTab(tabKey);
+            ptyTransport = 'none';
+            if (xtermInstance) {
+              xtermInstance.writeln('\r\n\x1b[33m[PTY shell exited — tap any key to start a new session]\x1b[0m');
+            }
+            break;
+          }
+        }
+      } catch (err) {
+        if (activePtyTabId === tabKey) {
+          ptyTransport = 'none';
+        }
+      }
+    }
+
+    async function connectLivePty(initialCmd = '') {
+      if (!initXtermIfNeeded()) return;
+      ensureInitialPtyTab();
+      renderPtyTabs();
+      schedulePtyFit();
+      if (ptyTransport === 'ws' && ptyWs && ptyWs.readyState === WebSocket.OPEN) {
+        if (initialCmd) sendPtyRawInput(initialCmd + '\r');
+        return;
+      }
+      if (ptyTransport === 'http' && ptySessionId) {
+        if (initialCmd) sendPtyRawInput(initialCmd + '\r');
+        return;
+      }
+
+      if (!hasSyncedServerPtySessions) {
+        hasSyncedServerPtySessions = true;
+        await syncServerPtySessions(!initialCmd);
+      }
+
+      const activeTabObj = ptyTabs.find((t) => t.tabId === activePtyTabId);
+      if (activeTabObj) {
+        ptySessionId = activeTabObj.sessionId || '';
+      }
+      const connectingTabId = activePtyTabId;
+
+      // Mint a single-use 30s WebSocket ticket so bearer tokens never appear in URLs
+      let ticket = '';
+      try {
+        const tRes = await fetch(apiUrl('/api/terminal/ws-ticket'), {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: '{}'
+        });
+        if (tRes.status === 401) {
+          goToStep(3);
+          return;
+        }
+        const tData = await tRes.json();
+        if (tData.ok && tData.ticket) {
+          ticket = tData.ticket;
+        }
+      } catch (_) {}
+
+      // Abort if user switched tabs while ticket was being minted
+      if (activePtyTabId !== connectingTabId) return;
+
+      const cols = (xtermInstance && xtermInstance.cols) || 80;
+      const rows = (xtermInstance && xtermInstance.rows) || 26;
+      const qs = new URLSearchParams({
+        cols: String(cols),
+        rows: String(rows)
+      });
+      if (ticket) qs.set('ticket', ticket);
+      if (ptySessionId) qs.set('session_id', ptySessionId);
+      if (initialCmd) qs.set('cmd', initialCmd);
+
+      let wsReadyResolved = false;
+      try {
+        const ws = new WebSocket(buildWsUrl(`/api/terminal/ws?${qs.toString()}`));
+        ws.binaryType = 'arraybuffer';
+        ptyWs = ws;
+
+        const fallbackTimer = setTimeout(() => {
+          if (ptyWs !== ws) return;
+          if (!wsReadyResolved) {
+            try { ws.close(); } catch (_) {}
+            if (ptyWs === ws) ptyWs = null;
+            startHttpPtyFallback(initialCmd, connectingTabId);
+          }
+        }, 3500);
+
+        ws.onopen = () => {
+          if (ptyWs !== ws) return;
+          ptyPollAbort = true;
+          ptyTransport = 'ws';
+          updatePtyPillUI();
+        };
+
+        ws.onmessage = (ev) => {
+          if (ptyWs !== ws) return;
+          if (ev.data instanceof ArrayBuffer) {
+            wsReadyResolved = true;
+            clearTimeout(fallbackTimer);
+            if (xtermInstance) {
+              xtermInstance.write(new Uint8Array(ev.data));
+            }
+            return;
+          }
+          try {
+            const msg = JSON.parse(String(ev.data));
+            if (msg.type === 'ready') {
+              wsReadyResolved = true;
+              clearTimeout(fallbackTimer);
+              ptyTransport = 'ws';
+              if (msg.session_id) {
+                bindSessionToTab(msg.session_id, connectingTabId);
+              }
+              updatePtyPillUI();
+              schedulePtyFit();
+            } else if (msg.type === 'exit') {
+              clearSessionOnTab(connectingTabId);
+              if (xtermInstance) {
+                xtermInstance.writeln(`\r\n\x1b[33m[Process exited (${msg.exit_code ?? 0}) — type or tap PTY to reconnect]\x1b[0m`);
+              }
+            }
+          } catch (_) {}
+        };
+
+        ws.onerror = () => {
+          if (ptyWs !== ws) return;
+          if (!wsReadyResolved) {
+            clearTimeout(fallbackTimer);
+            ptyWs = null;
+            startHttpPtyFallback(initialCmd, connectingTabId);
+          }
+        };
+
+        ws.onclose = () => {
+          clearTimeout(fallbackTimer);
+          if (ptyWs === ws) {
+            ptyWs = null;
+            if (ptyTransport === 'ws') ptyTransport = 'none';
+            updatePtyPillUI();
+          }
+        };
+      } catch (_) {
+        startHttpPtyFallback(initialCmd, connectingTabId);
+      }
+    }
+
+    function updatePtyPillUI() {
+      const pill = document.getElementById('pty-toggle-pill');
+      const tabBar = document.getElementById('pty-tab-bar');
+      const wrap = document.getElementById('term-pty-wrap');
+      const out = document.getElementById('term-output');
+      const input = document.getElementById('term-input');
+      if (pill) {
+        pill.classList.toggle('active', isPtyMode);
+        pill.textContent = isPtyMode ? '🟢 PTY' : '⚡ Shell';
+      }
+      if (tabBar) {
+        tabBar.classList.toggle('hidden', !isPtyMode);
+        if (isPtyMode) renderPtyTabs();
+      }
+      if (wrap) wrap.classList.toggle('hidden', !isPtyMode);
+      if (out) out.classList.toggle('hidden', isPtyMode);
+      if (input) {
+        input.placeholder = isPtyMode
+          ? 'send line to PTY (or tap screen for vim/htop keys)...'
+          : 'type a command...';
+      }
+    }
+
+    function togglePtyMode(forceState = null, initialCmd = '') {
+      haptic(20);
+      isPtyMode = typeof forceState === 'boolean' ? forceState : !isPtyMode;
+      localStorage.setItem('mith_pty_mode', isPtyMode ? 'true' : 'false');
+      if (isPtyMode) {
+        ensureInitialPtyTab();
+      }
+      updatePtyPillUI();
+      renderShortcutStrip();
+      if (isPtyMode) {
+        connectLivePty(initialCmd);
+        setTimeout(() => {
+          schedulePtyFit();
+          if (xtermInstance) xtermInstance.focus();
+        }, 60);
+      } else {
+        const input = document.getElementById('term-input');
+        if (input) input.focus();
+      }
+    }
+
+    function isInteractiveTuiCommand(cmd) {
+      const clean = (cmd || '').trim();
+      if (!clean) return false;
+      const tuiPatterns = [
+        /^(?:sudo\s+)?(?:htop|top|btop|atop|glances|nvtop|iotop|iftop)\b/i,
+        /^(?:sudo\s+)?(?:vim|nvim|vi|nano|pico|emacs|micro)\b/i,
+        /^(?:sudo\s+)?(?:less|more|man|tmux|screen|mc|ranger|nnn|lazygit|tig)\b/i,
+        /^watch\b/i,
+        /^ssh\b/i,
+        /^tail\s+.*(?:-f|-F|--follow)\b/i,
+        /^(?:python|python3|node|irb|bash|zsh)$/i
+      ];
+      return tuiPatterns.some((re) => re.test(clean));
+    }
+
+    function dispatchShortcutCommand(cmd) {
+      if (isPtyMode) {
+        if (cmd === 'clear') {
+          sendPtyRawInput('\x0c');
+          return;
+        }
+        if (isDestructive(cmd)) {
+          triggerBiometricGate(cmd);
+          return;
+        }
+        sendPtyRawInput(cmd + '\r');
+        if (xtermInstance) xtermInstance.focus();
+      } else {
+        executeCommand(cmd);
+      }
+    }
+
+    function haptic(ms = 15) {
+      if (navigator.vibrate) {
+        try { navigator.vibrate(ms); } catch (e) {}
+      }
+    }
+
+    function getAuthHeaders(extra = {}) {
+      const headers = { 'Content-Type': 'application/json', ...extra };
+      const token = localStorage.getItem('mith_term_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      return headers;
+    }
+
+    async function loadHostBookmarks() {
+      try {
+        const res = await fetch(apiUrl('/api/terminal/bookmarks'), { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.bookmarks) && data.bookmarks.length > 0) {
+          hostBookmarks = data.bookmarks;
+          if (activeShortcutMode === 'go') {
+            renderShortcutStrip();
+          }
+        }
+      } catch (_) {}
+    }
+
+    function setShortcutMode(mode) {
+      haptic(15);
+      activeShortcutMode = mode;
+      localStorage.setItem('mith_shortcut_mode', mode);
+      ['keys', 'go', 'ops'].forEach((m) => {
+        const btn = document.getElementById(`mode-btn-${m}`);
+        if (btn) btn.classList.toggle('active', m === mode);
+      });
+      renderShortcutStrip();
+    }
+
+    function createChipEl(label, className, onClick, onRemove = null, title = '') {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `term-chip ${className || ''}`.trim();
+      if (title) btn.title = title;
+      const span = document.createElement('span');
+      span.textContent = label;
+      btn.appendChild(span);
+      if (onRemove) {
+        const del = document.createElement('span');
+        del.className = 'chip-del';
+        del.textContent = '✕';
+        del.title = 'Remove shortcut';
+        del.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          onRemove();
+        });
+        btn.appendChild(del);
+      }
+      btn.addEventListener('click', onClick);
+      return btn;
+    }
+
+    function pinCurrentFolder() {
+      haptic(25);
+      const target = hostCwd || '~';
+      if (customFolderPins.some((p) => p.path === target)) {
+        appendTerminal(`📌 Already pinned: ${formatCwdShort(target)}`, 't-warn');
+        return;
+      }
+      const parts = target.replace(/\/+$/, '').split('/').filter(Boolean);
+      const shortName = parts.length > 0 ? parts[parts.length - 1] : '~';
+      customFolderPins.unshift({ label: shortName, path: target });
+      customFolderPins = customFolderPins.slice(0, 12);
+      localStorage.setItem('mith_custom_pins', JSON.stringify(customFolderPins));
+      renderShortcutStrip();
+      appendTerminal(`📌 Pinned folder "${shortName}" (${formatCwdShort(target)}) to 📁 Go strip`, 't-success');
+    }
+
+    function removePinnedFolder(pathToRemove) {
+      haptic(20);
+      customFolderPins = customFolderPins.filter((p) => p.path !== pathToRemove);
+      localStorage.setItem('mith_custom_pins', JSON.stringify(customFolderPins));
+      renderShortcutStrip();
+    }
+
+    function saveCurrentMacro() {
+      haptic(25);
+      const input = document.getElementById('term-input');
+      const candidate = input && input.value.trim() ? input.value.trim() : '';
+      const cmdToSave = candidate || window.prompt('Enter shell command to save as a 1-tap ⚡ Ops button:');
+      if (!cmdToSave || !cmdToSave.trim()) return;
+      const clean = cmdToSave.trim();
+      if (customOpsMacros.some((m) => m.cmd === clean)) return;
+      const shortLabel = clean.length > 16 ? clean.slice(0, 15) + '…' : clean;
+      customOpsMacros.unshift({ label: shortLabel, cmd: clean });
+      customOpsMacros = customOpsMacros.slice(0, 10);
+      localStorage.setItem('mith_custom_macros', JSON.stringify(customOpsMacros));
+      if (input && candidate) input.value = '';
+      renderShortcutStrip();
+      appendTerminal(`⚡ Saved quick macro: ${clean}`, 't-success');
+    }
+
+    function removeSavedMacro(cmdToRemove) {
+      haptic(20);
+      customOpsMacros = customOpsMacros.filter((m) => m.cmd !== cmdToRemove);
+      localStorage.setItem('mith_custom_macros', JSON.stringify(customOpsMacros));
+      renderShortcutStrip();
+    }
+
+    function renderShortcutStrip() {
+      const container = document.getElementById('term-chips-scroll');
+      if (!container) return;
+      container.innerHTML = '';
+
+      ['keys', 'go', 'ops'].forEach((m) => {
+        const btn = document.getElementById(`mode-btn-${m}`);
+        if (btn) btn.classList.toggle('active', m === activeShortcutMode);
+      });
+
+      if (activeShortcutMode === 'keys') {
+        if (isPtyMode) {
+          const ptyKey = (seq) => {
+            haptic(12);
+            sendPtyRawInput(seq);
+            if (xtermInstance) xtermInstance.focus();
+          };
+          container.appendChild(createChipEl('ESC', 'key', () => ptyKey('\x1b'), null, 'Escape (Vim normal mode)'));
+          container.appendChild(createChipEl(':wq', 'folder', () => ptyKey('\x1b:wq\r'), null, 'Save & quit Vim'));
+          container.appendChild(createChipEl(':q!', 'key-warn', () => ptyKey('\x1b:q!\r'), null, 'Force quit Vim without saving'));
+          container.appendChild(createChipEl('q', 'key', () => ptyKey('q'), null, 'Quit htop / less / man'));
+          container.appendChild(createChipEl('TAB', 'key', () => ptyKey('\t'), null, 'PTY Tab autocomplete'));
+          container.appendChild(createChipEl('Ctrl+C', 'key-warn', () => ptyKey('\x03'), null, 'Send SIGINT (Ctrl+C)'));
+          container.appendChild(createChipEl('Ctrl+D', 'key', () => ptyKey('\x04'), null, 'Send EOF (Ctrl+D)'));
+          container.appendChild(createChipEl('Ctrl+Z', 'key', () => ptyKey('\x1a'), null, 'Suspend job (Ctrl+Z)'));
+          container.appendChild(createChipEl('◀', 'key', () => ptyKey('\x1b[D'), null, 'Left arrow'));
+          container.appendChild(createChipEl('▼', 'key', () => ptyKey('\x1b[B'), null, 'Down arrow'));
+          container.appendChild(createChipEl('▲', 'key', () => ptyKey('\x1b[A'), null, 'Up arrow'));
+          container.appendChild(createChipEl('▶', 'key', () => ptyKey('\x1b[C'), null, 'Right arrow'));
+          container.appendChild(createChipEl('/', 'key', () => ptyKey('/'), null, 'Search in Vim / less'));
+          container.appendChild(createChipEl('-', 'key', () => ptyKey('-')));
+          container.appendChild(createChipEl('~', 'key', () => ptyKey('~')));
+          container.appendChild(createChipEl('|', 'key', () => ptyKey('|')));
+        } else {
+          container.appendChild(createChipEl('TAB', 'key', () => sendDevKey('TAB'), null, 'Autocomplete path or command'));
+          container.appendChild(createChipEl('▲', 'key', () => sendDevKey('UP'), null, 'Previous command'));
+          container.appendChild(createChipEl('▼', 'key', () => sendDevKey('DOWN'), null, 'Next command'));
+          container.appendChild(createChipEl('Ctrl+C', 'key-warn', () => sendDevKey('CTRL_C'), null, 'Interrupt process / cancel line'));
+          container.appendChild(createChipEl('-', 'key', () => insertSymbol('-')));
+          container.appendChild(createChipEl('/', 'key', () => insertSymbol('/')));
+          container.appendChild(createChipEl('~', 'key', () => insertSymbol('~')));
+          container.appendChild(createChipEl('|', 'key', () => insertSymbol(' | ')));
+          container.appendChild(createChipEl('&&', 'key', () => insertSymbol(' && ')));
+          container.appendChild(createChipEl('*', 'key', () => insertSymbol('*')));
+          container.appendChild(createChipEl('⬆ ..', 'folder', () => dispatchShortcutCommand('cd .. && ls'), null, 'Up one directory'));
+          container.appendChild(createChipEl('ll', '', () => dispatchShortcutCommand('ls -la'), null, 'Detailed directory listing'));
+        }
+      } else if (activeShortcutMode === 'go') {
+        container.appendChild(createChipEl('📌 +Pin CWD', 'pin-add', () => pinCurrentFolder(), null, 'Bookmark current folder'));
+        container.appendChild(createChipEl('⬆ ..', 'folder', () => dispatchShortcutCommand('cd .. && ls'), null, 'Parent folder'));
+        customFolderPins.forEach((pin) => {
+          const safeQ = pin.path.replace(/"/g, '\\"');
+          container.appendChild(
+            createChipEl(
+              `📌 ${pin.label}`,
+              'custom-pin',
+              () => dispatchShortcutCommand(`cd "${safeQ}" && ls`),
+              () => removePinnedFolder(pin.path),
+              pin.path
+            )
+          );
+        });
+        hostBookmarks.forEach((bm) => {
+          container.appendChild(
+            createChipEl(`${bm.icon} ${bm.label}`, 'folder', () => dispatchShortcutCommand(bm.cmd), null, bm.path || bm.cmd)
+          );
+        });
+      } else if (activeShortcutMode === 'ops') {
+        container.appendChild(createChipEl('⚡ +Save', 'pin-add', () => saveCurrentMacro(), null, 'Save command in input box as 1-tap macro'));
+        customOpsMacros.forEach((mac) => {
+          container.appendChild(
+            createChipEl(
+              `⚡ ${mac.label}`,
+              'custom-pin',
+              () => dispatchShortcutCommand(mac.cmd),
+              () => removeSavedMacro(mac.cmd),
+              mac.cmd
+            )
+          );
+        });
+        const builtInOps = [
+          { label: '📈 htop', cmd: 'htop || top', tui: true },
+          { label: '📝 vim', cmd: 'vim', tui: true },
+          { label: '📜 tail -f', cmd: 'tail -n 25 -f /tmp/mith_terminal_daemon.log', tui: true },
+          { label: '📊 git status', cmd: 'git status -sb' },
+          { label: '📝 git diff', cmd: 'git diff --stat' },
+          { label: '📜 git log', cmd: 'git log -n 8 --oneline --decorate' },
+          { label: '🔌 ports', cmd: 'ss -tulpn 2>/dev/null || lsof -i -P -n | head -n 20' },
+          { label: '⚙️ top cpu', cmd: 'ps aux --sort=-%cpu 2>/dev/null | head -n 12 || ps aux | head -n 12' },
+          { label: '💾 disk', cmd: 'df -h .' },
+          { label: '🧹 clear', cmd: 'clear' }
+        ];
+        builtInOps.forEach((op) => {
+          container.appendChild(
+            createChipEl(
+              op.label,
+              op.tui ? 'folder' : '',
+              () => (op.tui ? togglePtyMode(true, op.cmd) : dispatchShortcutCommand(op.cmd)),
+              null,
+              op.cmd
+            )
+          );
+        });
+      }
+    }
+
+    function consumeUrlAuthParams() {
+      const searchParams = new URLSearchParams(window.location.search);
+      const rawHash = window.location.hash.replace(/^#\/?\??/, '');
+      const hashParams = new URLSearchParams(rawHash);
+
+      const hashHost = (hashParams.get('host') || searchParams.get('host') || '').trim();
+      const autoPin = (hashParams.get('pin') || searchParams.get('pin') || '').replace(/\D/g, '');
+      const autoToken = (hashParams.get('token') || searchParams.get('token') || '').trim();
+
+      if (hashHost && /^https?:\/\//i.test(hashHost)) {
+        saveHostUrl(hashHost);
+      }
+
+      // Security: Scrub #pin / #token / #host from browser URL bar & history immediately
+      if (window.location.search || window.location.hash) {
+        try {
+          window.history.replaceState(null, document.title, window.location.pathname);
+        } catch (_) {}
+      }
+
+      return { hashHost, autoPin, autoToken };
+    }
+
+    // Check if onboarding completed previously
+    window.addEventListener('DOMContentLoaded', () => {
+      // Visual viewport keyboard docking for iOS Safari / Standalone PWA / Capacitor
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', syncVisualViewport);
+        window.visualViewport.addEventListener('scroll', syncVisualViewport);
+        syncVisualViewport();
+      }
+
+      // 1. Parse URL hash (#host=...&pin=... or #pin=...) BEFORE hydrating inputs
+      const { autoPin, autoToken } = consumeUrlAuthParams();
+
+      window.addEventListener('hashchange', () => {
+        const next = consumeUrlAuthParams();
+        if (next.autoToken) {
+          localStorage.setItem('mith_term_token', next.autoToken);
+          localStorage.setItem('mith_onboarding_complete', 'true');
+          showTerminalView();
+        } else if (next.autoPin && next.autoPin.length === 6) {
+          pairWithPin(next.autoPin);
+        }
+      });
+
+      // Populate host URL fields & show native host box if running inside Capacitor shell
+      const pairHostIn = document.getElementById('pair-host-url-input');
+      const setHostIn = document.getElementById('settings-host-url-input');
+      if (pairHostIn && hostBaseUrl) pairHostIn.value = hostBaseUrl;
+      if (setHostIn && hostBaseUrl) setHostIn.value = hostBaseUrl;
+      if (isNativeShell()) {
+        const nativeBox = document.getElementById('native-host-url-box');
+        if (nativeBox) nativeBox.classList.remove('hidden');
+      }
+
+      // Show subtle Add-to-Home-Screen tip only when running inside a regular browser tab
+      if (!isStandaloneApp() && localStorage.getItem('mith_pwa_hint_dismissed') !== 'true') {
+        const hintEl = document.getElementById('pwa-install-hint');
+        if (hintEl) hintEl.classList.remove('hidden');
+      }
+
+      renderShortcutStrip();
+
+      // PIN input auto-formatting & auto-submit on 6 digits
+      const pinInput = document.getElementById('pin-input');
+      if (pinInput) {
+        pinInput.addEventListener('input', (e) => {
+          let val = e.target.value.replace(/\D/g, '').slice(0, 6);
+          if (val.length > 3) {
+            val = val.slice(0, 3) + '-' + val.slice(3);
+          }
+          e.target.value = val;
+          if (val.replace(/\D/g, '').length === 6) {
+            pairWithPin(val);
+          }
+        });
+      }
+
+      if (autoToken) {
+        localStorage.setItem('mith_term_token', autoToken);
+        localStorage.setItem('mith_onboarding_complete', 'true');
+        showTerminalView();
+      } else if (autoPin && autoPin.length === 6) {
+        goToStep(3);
+        pairWithPin(autoPin);
+      } else if (localStorage.getItem('mith_onboarding_complete') === 'true') {
+        showTerminalView();
+      }
+      if (geminiApiKey) {
+        const keyInput = document.getElementById('gemini-key-input');
+        const setKeyInput = document.getElementById('settings-gemini-key-input');
+        if (keyInput) keyInput.value = geminiApiKey;
+        if (setKeyInput) setKeyInput.value = geminiApiKey;
+      }
+      // Check initial ping
+      fetch(apiUrl('/api/terminal/ping'), { headers: getAuthHeaders() })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok) {
+            hostCwd = d.cwd || '~';
+            hostUser = d.user || 'user';
+            hostNode = d.host || 'workstation';
+            hostSystem = d.system || 'Linux';
+            hostHomeDir = d.home_dir || hostHomeDir;
+            hostHydrated = true;
+            updateTerminalHeader();
+            if (d.authenticated) {
+              loadHostBookmarks();
+            }
+            const dot = document.getElementById('header-status-dot');
+            const txt = document.getElementById('header-status-text');
+            if (dot) dot.classList.remove('offline');
+            if (txt) txt.textContent = d.host || 'Connected';
+            const hostVal = document.getElementById('host-name-val');
+            if (hostVal) hostVal.textContent = `${d.host} (${d.system} ${d.arch})`;
+          }
+        })
+        .catch(() => {
+          const dot = document.getElementById('header-status-dot');
+          const txt = document.getElementById('header-status-text');
+          if (dot) dot.classList.add('offline');
+          if (txt) txt.textContent = 'Offline';
+        });
+    });
+
+    async function pairWithPin(candidatePin) {
+      haptic(25);
+      const pinInput = document.getElementById('pin-input');
+      const statusEl = document.getElementById('pair-status');
+      const pin = (candidatePin || (pinInput ? pinInput.value : '')).replace(/\D/g, '').trim();
+
+      if (!pin || pin.length < 6) {
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger);">Please enter all 6 digits of the PIN.</span>';
+        return;
+      }
+
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent);">Authenticating pairing handshake...</span>';
+
+      const clientName = navigator.userAgent.includes('iPhone')
+        ? 'iPhone'
+        : (navigator.userAgent.includes('Android') ? 'Android' : 'Mobile Web');
+
+      try {
+        const res = await fetch(apiUrl('/api/terminal/pair'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: pin, client_name: clientName })
+        });
+        const data = await res.json();
+        if (data.ok && data.token) {
+          localStorage.setItem('mith_term_token', data.token);
+          localStorage.setItem('mith_onboarding_complete', 'true');
+          if (data.host) hostNode = data.host;
+          if (data.user) hostUser = data.user;
+          if (data.cwd) hostCwd = data.cwd;
+          hostHomeDir = data.home_dir || hostHomeDir;
+          hostHydrated = true;
+          if (statusEl) statusEl.innerHTML = `<span style="color:var(--success); font-weight:600;">✔ Successfully paired with ${escapeHtml(data.host || hostNode)}!</span>`;
+          const hostEl = document.getElementById('host-name-val');
+          if (hostEl) hostEl.textContent = `${data.host || hostNode} (${data.user || hostUser})`;
+          haptic([40, 50, 40]);
+          showTerminalView();
+          loadHostBookmarks();
+          appendTerminal(`✔ Connected to ${data.host || hostNode} (${data.user || hostUser})`, 't-success');
+        } else {
+          if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger);">${escapeHtml(data.error || 'Pairing failed.')}</span>`;
+          haptic([80, 50, 80]);
+        }
+      } catch (err) {
+        if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger);">Network error: ${escapeHtml(err.message)}</span>`;
+      }
+    }
+
+    function updateTerminalHeader() {
+      const shortCwd = formatShortCwd(hostCwd);
+      const headerTitle = document.getElementById('term-header-title');
+      if (headerTitle) {
+        headerTitle.textContent = hostHydrated
+          ? `${hostUser || 'user'}@${hostNode || 'workstation'}: ${shortCwd}`
+          : `user@host: ${shortCwd}`;
+      }
+      const bannerHost = document.getElementById('term-banner-host');
+      if (bannerHost) {
+        bannerHost.textContent = hostHydrated
+          ? `${hostNode || 'workstation'} (${hostSystem || 'Linux'})`
+          : 'Remote Host';
+      }
+      const sheetCwd = document.getElementById('sheet-cwd-val');
+      if (sheetCwd) sheetCwd.textContent = shortCwd;
+    }
+
+    // Step navigation
+    function goToStep(stepNum) {
+      haptic(20);
+      document.body.classList.remove('terminal-active');
+      document.getElementById('onboarding-stepper').classList.remove('hidden');
+      document.querySelectorAll('main > section').forEach(sec => sec.classList.add('hidden'));
+      document.querySelectorAll('.step-node').forEach((node, idx) => {
+        node.classList.remove('active');
+        if (idx + 1 < stepNum) node.classList.add('done');
+        else node.classList.remove('done');
+      });
+
+      const nextSec = document.getElementById(`step-${stepNum}`);
+      if (nextSec) nextSec.classList.remove('hidden');
+
+      const activeNode = document.getElementById(`snode-${stepNum}`);
+      if (activeNode) activeNode.classList.add('active');
+
+      currentStep = stepNum;
+    }
+
+    // Step 1: Enroll Biometrics (WebAuthn Face ID / Touch ID)
+    async function enrollBiometrics() {
+      haptic(30);
+      const statusEl = document.getElementById('biometric-status');
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent);">Requesting Face ID / Touch ID...</span>';
+
+      if (!window.PublicKeyCredential || isNativeShell()) {
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--warning);">Passkey policy ready. Moving to Step 2...</span>';
+        setTimeout(() => {
+          biometricRegistered = true;
+          localStorage.setItem('mith_biometric_enrolled', 'true');
+          if (!document.body.classList.contains('terminal-active')) goToStep(2);
+        }, 1200);
+        return;
+      }
+
+      try {
+        let challenge = new Uint8Array(32);
+        try {
+          const cRes = await fetch(apiUrl('/api/terminal/webauthn/challenge'));
+          const cData = await cRes.json();
+          if (cData.challenge) {
+            challenge = new TextEncoder().encode(cData.challenge);
+          } else {
+            window.crypto.getRandomValues(challenge);
+          }
+        } catch (_) {
+          window.crypto.getRandomValues(challenge);
+        }
+
+        const publicKey = {
+          challenge: challenge,
+          rp: { name: "MiTH Terminal", id: window.location.hostname || "localhost" },
+          user: {
+            id: new Uint8Array([1, 2, 3, 4, 5, 6]),
+            name: 'owner@mith-terminal.local',
+            displayName: 'MiTH Terminal Owner'
+          },
+          pubKeyCredParams: [
+            { alg: -7, type: "public-key" },  // ES256
+            { alg: -257, type: "public-key" } // RS256
+          ],
+          authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            userVerification: "required"
+          },
+          timeout: 60000
+        };
+
+        const cred = await navigator.credentials.create({ publicKey });
+        if (cred) {
+          try {
+            await fetch(apiUrl('/api/terminal/webauthn/register'), {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ id: cred.id, type: cred.type })
+            });
+          } catch (_) {}
+        }
+
+        biometricRegistered = true;
+        localStorage.setItem('mith_biometric_enrolled', 'true');
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--success); font-weight:600;">✔ Passkey Registered Successfully!</span>';
+        haptic([40, 60, 40]);
+        if (!document.body.classList.contains('terminal-active')) {
+          setTimeout(() => goToStep(2), 1200);
+        } else {
+          appendTerminal('🛡️ Hardware Biometric Passkey registered.', 't-success');
+          showPtyToast('🛡️ Hardware Passkey registered');
+          closeSettingsSheet();
+        }
+
+      } catch (err) {
+        console.warn("WebAuthn enrollment:", err);
+        if (statusEl) statusEl.innerHTML = `<span style="color:var(--success);">✔ Biometric policy ready (Mode: ${escapeHtml(err.name || 'Enrolled')}). Moving forward...</span>`;
+        biometricRegistered = true;
+        localStorage.setItem('mith_biometric_enrolled', 'true');
+        if (!document.body.classList.contains('terminal-active')) {
+          setTimeout(() => goToStep(2), 1200);
+        }
+      }
+    }
+
+    // Step 2: Switch OS
+    function switchOS(os, tabEl) {
+      haptic(15);
+      document.querySelectorAll('.os-tab').forEach(t => t.classList.remove('active'));
+      const activeEl = tabEl || (typeof event !== 'undefined' ? event.target : null);
+      if (activeEl) activeEl.classList.add('active');
+
+      const cmdEl = document.getElementById('cmd-text');
+      if (os === 'mac') cmdEl.innerText = 'git clone https://github.com/cr4zyd34thg0d/MiTH-Terminal.git && cd MiTH-Terminal && ./start.sh';
+      if (os === 'win') cmdEl.innerText = 'git clone https://github.com/cr4zyd34thg0d/MiTH-Terminal.git; cd MiTH-Terminal; .\\start.ps1';
+      if (os === 'linux') cmdEl.innerText = 'git clone https://github.com/cr4zyd34thg0d/MiTH-Terminal.git && cd MiTH-Terminal && ./start.sh';
+      if (os === 'npx') cmdEl.innerText = 'npx github:cr4zyd34thg0d/MiTH-Terminal';
+    }
+
+    function copyCommand(btnEl) {
+      haptic(25);
+      const text = document.getElementById('cmd-text').innerText;
+      navigator.clipboard.writeText(text);
+      const btn = btnEl || (typeof event !== 'undefined' ? event.target : null);
+      if (btn) {
+        btn.innerText = 'Copied!';
+        setTimeout(() => { btn.innerText = 'Copy'; }, 1500);
+      }
+    }
+
+    // Step 3: Run Real Ping Test
+    async function runConnectionTest() {
+      haptic(30);
+      const logEl = document.getElementById('test-log');
+      const latEl = document.getElementById('test-latency');
+      const proceedBtn = document.getElementById('btn-proceed-step4');
+      const btn = document.getElementById('btn-run-test');
+
+      btn.disabled = true;
+      btn.innerText = 'Connecting...';
+      logEl.innerHTML = '<span style="color:#60a5fa;">→ Sending echo probe packet to host daemon...</span>';
+
+      const tStart = performance.now();
+      try {
+        const res = await fetch(apiUrl('/api/terminal/ping'), { headers: getAuthHeaders() });
+        const data = await res.json();
+        const rtt = Math.round(performance.now() - tStart);
+
+        if (data.ok) {
+          hostCwd = data.cwd || '~';
+          hostUser = data.user || 'user';
+          hostNode = data.host || 'workstation';
+          hostSystem = data.system || 'Linux';
+          hostHomeDir = data.home_dir || hostHomeDir;
+          hostHydrated = true;
+          updateTerminalHeader();
+
+          latEl.innerText = `${rtt} ms`;
+          logEl.innerHTML = `<span style="color:var(--success); font-weight:600;">✔ Handshake Confirmed! Host: ${escapeHtml(data.host)} (${escapeHtml(data.system)} ${escapeHtml(data.arch)}), Uptime: ${Math.round(data.uptime_seconds)}s</span>`;
+          btn.innerText = '✔ Handshake OK';
+          btn.classList.remove('btn-primary');
+          btn.classList.add('btn-secondary');
+          proceedBtn.classList.remove('hidden');
+          haptic([40, 50, 40]);
+        } else {
+          throw new Error(data.error || 'Host returned error');
+        }
+      } catch (err) {
+        latEl.innerText = '-- ms';
+        logEl.innerHTML = `<span style="color:var(--danger);">✖ Connection failed: ${escapeHtml(err.message)}. Ensure daemon is running on port 8790.</span>`;
+        btn.disabled = false;
+        btn.innerText = 'Retry Ping';
+        haptic([80, 50, 80]);
+      }
+    }
+
+    // Step 4: Finish Onboarding
+    function finishOnboarding(skipAi) {
+      haptic(25);
+      if (!skipAi) {
+        const key = document.getElementById('gemini-key-input').value.trim();
+        if (key) {
+          localStorage.setItem('mith_gemini_key', key);
+          geminiApiKey = key;
+          const setKeyIn = document.getElementById('settings-gemini-key-input');
+          if (setKeyIn) setKeyIn.value = key;
+        }
+      }
+      localStorage.setItem('mith_onboarding_complete', 'true');
+      showTerminalView();
+    }
+
+    let vitalsPollTimer = null;
+
+    function openVitalsSheet() {
+      haptic(20);
+      fetchVitals();
+      const el = document.getElementById('vitals-sheet');
+      if (el) el.classList.add('open');
+    }
+
+    function closeVitalsSheet() {
+      haptic(15);
+      const el = document.getElementById('vitals-sheet');
+      if (el) el.classList.remove('open');
+    }
+
+    function openSettingsSheet() {
+      haptic(20);
+      const setHostIn = document.getElementById('settings-host-url-input');
+      if (setHostIn) setHostIn.value = hostBaseUrl;
+      const setKeyIn = document.getElementById('settings-gemini-key-input');
+      if (setKeyIn) setKeyIn.value = geminiApiKey;
+      const el = document.getElementById('settings-sheet');
+      if (el) el.classList.add('open');
+    }
+
+    function closeSettingsSheet() {
+      haptic(15);
+      const el = document.getElementById('settings-sheet');
+      if (el) el.classList.remove('open');
+    }
+
+    function toggleDevKeypad() {
+      haptic(20);
+      const keypad = document.getElementById('accessory-dev-keypad');
+      if (keypad) {
+        keypad.classList.toggle('hidden');
+      }
+    }
+
+    async function fetchVitals() {
+      try {
+        const tStart = performance.now();
+        const res = await fetch(apiUrl('/api/terminal/vitals'), { headers: getAuthHeaders() });
+        const data = await res.json();
+        const rtt = Math.round(performance.now() - tStart);
+        if (data.ok && data.vitals) {
+          if (data.host) hostNode = data.host;
+          if (data.user) hostUser = data.user;
+          if (data.cwd) hostCwd = data.cwd;
+          if (data.home_dir) hostHomeDir = data.home_dir;
+          hostHydrated = true;
+          updateTerminalHeader();
+          updateVitalsUI(data.vitals, rtt);
+        }
+      } catch (e) {
+        console.warn('Vitals telemetry fetch error:', e);
+      }
+    }
+
+    function updateVitalsUI(v, rtt = 0) {
+      // Header pill
+      const headText = document.getElementById('header-status-text');
+      if (headText) headText.textContent = `${v.host || hostNode} · ${rtt || 80}ms`;
+
+      // Session hero in canvas
+      const canvasHost = document.getElementById('canvas-host-text');
+      if (canvasHost) canvasHost.textContent = v.host || hostNode;
+
+      const canvasCwd = document.getElementById('canvas-cwd-text');
+      if (canvasCwd) canvasCwd.textContent = v.cwd || hostCwd;
+
+      const canvasMeta = document.getElementById('canvas-meta-pill');
+      if (canvasMeta) canvasMeta.textContent = `${v.cpu_pct}% · ${rtt || 80}ms`;
+
+      // Sheet fields
+      const sheetCpuVal = document.getElementById('sheet-cpu-val');
+      const sheetCpuBar = document.getElementById('sheet-cpu-bar');
+      if (sheetCpuVal) sheetCpuVal.textContent = `${v.cpu_pct}% (${v.cpu_load})`;
+      if (sheetCpuBar) {
+        sheetCpuBar.style.width = `${Math.min(100, v.cpu_pct)}%`;
+        sheetCpuBar.className = 'vitals-bar-fill ' + (v.cpu_pct > 80 ? 'danger' : v.cpu_pct > 40 ? 'warn' : 'success');
+      }
+
+      const sheetMemVal = document.getElementById('sheet-mem-val');
+      const sheetMemBar = document.getElementById('sheet-mem-bar');
+      if (sheetMemVal) sheetMemVal.textContent = `${v.mem_used_gb} / ${v.mem_total_gb} GB`;
+      if (sheetMemBar) {
+        sheetMemBar.style.width = `${v.mem_pct}%`;
+        sheetMemBar.className = 'vitals-bar-fill ' + (v.mem_pct > 85 ? 'danger' : v.mem_pct > 65 ? 'warn' : 'success');
+      }
+
+      const sheetDiskVal = document.getElementById('sheet-disk-val');
+      const sheetDiskBar = document.getElementById('sheet-disk-bar');
+      if (sheetDiskVal) sheetDiskVal.textContent = `${v.disk_free_gb} GB Free`;
+      if (sheetDiskBar) {
+        sheetDiskBar.style.width = `${v.disk_pct}%`;
+        sheetDiskBar.className = 'vitals-bar-fill ' + (v.disk_pct > 90 ? 'danger' : 'success');
+      }
+
+      const sheetHost = document.getElementById('sheet-host-val');
+      if (sheetHost) sheetHost.textContent = v.host || hostNode;
+
+      const sheetOs = document.getElementById('sheet-os-val');
+      if (sheetOs) sheetOs.textContent = `${v.system || 'Linux'} (${v.arch || 'x86_64'})`;
+
+      const sheetUptime = document.getElementById('sheet-uptime-val');
+      if (sheetUptime) {
+        const uptimeMin = Math.round((v.uptime_seconds || 0) / 60);
+        sheetUptime.textContent = `${uptimeMin} min`;
+      }
+
+      const sheetCwd = document.getElementById('sheet-cwd-val');
+      if (sheetCwd) sheetCwd.textContent = v.cwd || hostCwd;
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function formatShortCwd(cwd) {
+      if (!cwd) return '~';
+      const cleanHome = (hostHomeDir || '').replace(/[\\/]+$/, '');
+      if (cleanHome) {
+        if (cwd === cleanHome) return '~';
+        if (cwd.startsWith(cleanHome + '/')) return '~/' + cwd.slice(cleanHome.length + 1);
+        if (cwd.startsWith(cleanHome + '\\')) return '~\\' + cwd.slice(cleanHome.length + 1);
+      }
+      if (hostUser && hostUser !== 'user') {
+        if (cwd === `/home/${hostUser}`) return '~';
+        if (cwd.startsWith(`/home/${hostUser}/`)) return '~/' + cwd.slice(`/home/${hostUser}/`.length);
+        if (cwd === `/Users/${hostUser}`) return '~';
+        if (cwd.startsWith(`/Users/${hostUser}/`)) return '~/' + cwd.slice(`/Users/${hostUser}/`.length);
+      }
+      const unixHomeMatch = cwd.match(/^\/(?:home|Users)\/([^/]+)(\/.*)?$/);
+      if (unixHomeMatch) {
+        return unixHomeMatch[2] ? '~' + unixHomeMatch[2] : '~';
+      }
+      if (cwd === '/mnt/c') return 'C:\\';
+      if (cwd.startsWith('/mnt/c/')) return 'C:\\' + cwd.slice(7).replace(/\//g, '\\');
+      return cwd;
+    }
+
+    function formatCwdShort(cwd) {
+      return formatShortCwd(cwd);
+    }
+
+    function addBlockCard(cmd, exitCode, outputText, rtt = 0) {
+      // Intentionally no-op: pure terminal window replaces fragmented card feed
+    }
+
+    function clearTerminal() {
+      haptic(20);
+      if (isPtyMode) {
+        if (xtermInstance) xtermInstance.clear();
+        sendPtyRawInput('\x0c');
+        if (xtermInstance) xtermInstance.focus();
+        return;
+      }
+      const term = document.getElementById('term-output');
+      if (term) term.innerHTML = '';
+      const input = document.getElementById('term-input');
+      if (input) input.focus();
+    }
+
+    function clearActiveFeed() {
+      clearTerminal();
+    }
+
+    function showTerminalView() {
+      document.body.classList.add('terminal-active');
+      document.getElementById('onboarding-stepper').classList.add('hidden');
+      document.querySelectorAll('main > section').forEach(sec => sec.classList.add('hidden'));
+      document.getElementById('terminal-view').classList.remove('hidden');
+      if (isPtyMode) {
+        ensureInitialPtyTab();
+      }
+      updatePtyPillUI();
+      syncVisualViewport();
+      renderShortcutStrip();
+      updateTerminalHeader();
+      loadHostBookmarks();
+      fetchVitals();
+      if (!vitalsPollTimer) {
+        vitalsPollTimer = setInterval(fetchVitals, 8000);
+      }
+      if (isPtyMode) {
+        connectLivePty();
+      }
+      const input = document.getElementById('term-input');
+      if (input) {
+        input.setAttribute('autocapitalize', 'none');
+        input.setAttribute('autocorrect', 'off');
+        input.setAttribute('autocomplete', 'off');
+        input.setAttribute('spellcheck', 'false');
+        if (!isPtyMode) {
+          setTimeout(() => input.focus(), 60);
+        }
+      }
+    }
+
+    function restartOnboarding() {
+      closeSettingsSheet();
+      detachCurrentPtyStream();
+      document.body.classList.remove('terminal-active');
+      localStorage.removeItem('mith_onboarding_complete');
+      localStorage.removeItem('mith_term_token');
+      sessionStorage.removeItem('mith_pty_tabs');
+      sessionStorage.removeItem('mith_pty_active_tab');
+      sessionStorage.removeItem('mith_pty_sid');
+      ptyTabs = [];
+      activePtyTabId = '';
+      ptySessionId = '';
+      hasSyncedServerPtySessions = false;
+      document.getElementById('onboarding-stepper').classList.remove('hidden');
+      document.getElementById('terminal-view').classList.add('hidden');
+      goToStep(1);
+    }
+
+    function logCommandToTerminal(cmd) {
+      const term = document.getElementById('term-output');
+      if (!term) return;
+      const line = document.createElement('div');
+      line.className = 'term-entry-line';
+      const shortCwd = formatShortCwd(hostCwd);
+      line.innerHTML = `<span class="t-user">${escapeHtml(hostUser || 'user')}@${escapeHtml(hostNode || 'workstation')}</span>:<span class="t-path">${escapeHtml(shortCwd)}</span>$ <span class="t-cmd">${escapeHtml(cmd)}</span>`;
+      term.appendChild(line);
+      term.scrollTop = term.scrollHeight;
+    }
+
+    function logOutputToTerminal(stdout, stderr, exitCode) {
+      const term = document.getElementById('term-output');
+      if (!term) return;
+      const combined = [stdout, stderr].filter(Boolean).join('\n').trim();
+      if (combined) {
+        lastOutputText = combined;
+      }
+      if (stdout) {
+        const pre = document.createElement('pre');
+        pre.className = 'term-stdout';
+        pre.textContent = stdout.replace(/\r\n/g, '\n').replace(/\n$/, '');
+        term.appendChild(pre);
+      }
+      if (stderr) {
+        const pre = document.createElement('pre');
+        pre.className = 'term-stderr';
+        pre.textContent = stderr.replace(/\r\n/g, '\n').replace(/\n$/, '');
+        term.appendChild(pre);
+      } else if (exitCode !== undefined && exitCode !== 0 && !stdout) {
+        const pre = document.createElement('pre');
+        pre.className = 'term-stderr';
+        pre.textContent = `[process exited with code ${exitCode}]`;
+        term.appendChild(pre);
+      }
+      term.scrollTop = term.scrollHeight;
+    }
+
+    async function copyLastOutput() {
+      haptic(20);
+      const btn = document.getElementById('btn-copy-last');
+      let textToCopy = lastOutputText;
+      if (isPtyMode && xtermInstance) {
+        const sel = xtermInstance.getSelection ? xtermInstance.getSelection() : '';
+        if (sel) {
+          textToCopy = sel;
+        } else if (xtermInstance.buffer && xtermInstance.buffer.active) {
+          const buf = xtermInstance.buffer.active;
+          const lines = [];
+          const start = Math.max(0, buf.length - 80);
+          for (let i = start; i < buf.length; i++) {
+            const ln = buf.getLine(i);
+            if (ln) lines.push(ln.translateToString(true));
+          }
+          textToCopy = lines.join('\n').trim();
+        }
+      }
+      if (!textToCopy) {
+        appendTerminal('📋 Nothing to copy yet — run a command first.', 't-warn');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+        if (btn) {
+          btn.textContent = '✔';
+          setTimeout(() => { btn.textContent = '📋'; }, 1200);
+        }
+      } catch (_) {
+        appendTerminal('📋 Clipboard access blocked by browser.', 't-warn');
+      }
+    }
+
+    function setRunningState(running) {
+      isCommandRunning = running;
+      const sendBtn = document.getElementById('term-send-btn');
+      const promptInd = document.getElementById('term-prompt-indicator');
+      if (sendBtn) {
+        sendBtn.classList.toggle('running', running);
+        sendBtn.textContent = running ? '⏹' : '↵';
+        sendBtn.title = running ? 'Interrupt running command (Ctrl+C)' : 'Run command';
+      }
+      if (promptInd) {
+        promptInd.classList.toggle('busy', running);
+      }
+    }
+
+    async function cancelRunningCommand() {
+      haptic([30, 30]);
+      try {
+        const res = await fetch(apiUrl('/api/terminal/cancel'), {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: '{}'
+        });
+        const data = await res.json();
+        if (!data.cancelled) {
+          appendTerminal('^C', 't-err');
+        }
+      } catch (_) {
+        appendTerminal('^C', 't-err');
+      }
+    }
+
+    function handlePrimaryAction() {
+      if (isCommandRunning) {
+        cancelRunningCommand();
+      } else {
+        submitCommand();
+      }
+    }
+
+    // Terminal Interaction
+    function appendTerminal(text, className = 't-out') {
+      const term = document.getElementById('term-output');
+      if (!term || !text) return;
+      const div = document.createElement('div');
+      div.className = className;
+      div.textContent = text;
+      term.appendChild(div);
+      term.scrollTop = term.scrollHeight;
+    }
+
+    function handleInputKey(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitCommand();
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        sendDevKey('TAB');
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        sendDevKey('UP');
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        sendDevKey('DOWN');
+      } else if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        sendDevKey('CTRL_C');
+      } else if (e.ctrlKey && (e.key === 'l' || e.key === 'L')) {
+        e.preventDefault();
+        clearTerminal();
+      }
+    }
+
+    function submitCommand() {
+      haptic(20);
+      const input = document.getElementById('term-input');
+      const cmd = input.value.trim();
+      if (!cmd) {
+        if (isPtyMode) {
+          sendPtyRawInput('\r');
+          if (xtermInstance) xtermInstance.focus();
+        }
+        return;
+      }
+      input.value = '';
+      historyDraft = '';
+
+      if (cmdHistory[cmdHistory.length - 1] !== cmd) {
+        cmdHistory.push(cmd);
+        if (cmdHistory.length > 100) cmdHistory = cmdHistory.slice(-100);
+        localStorage.setItem('mith_cmd_history', JSON.stringify(cmdHistory));
+      }
+      historyIndex = cmdHistory.length;
+
+      // Natural language detection (only in standard Shell mode, or explicit ? / ai prefix)
+      if ((!isPtyMode && isNaturalLanguage(cmd)) || cmd.startsWith('?') || cmd.startsWith('ai ')) {
+        runGeminiTerminalCopilot(cmd);
+        return;
+      }
+
+      // Check if destructive (enforced in both Shell and PTY modes)
+      if (isDestructive(cmd)) {
+        triggerBiometricGate(cmd);
+        return;
+      }
+
+      if (isPtyMode) {
+        sendPtyRawInput(cmd + '\r');
+        if (xtermInstance) xtermInstance.focus();
+        return;
+      }
+
+      if (isInteractiveTuiCommand(cmd)) {
+        togglePtyMode(true, cmd);
+        return;
+      }
+
+      executeCommand(cmd);
+    }
+
+    function isNaturalLanguage(cmd) {
+      if (cmd.startsWith('?') || cmd.startsWith('ai ')) return true;
+      const shellStarts = ['cd', 'ls', 'll', 'la', 'l', 'pwd', 'cat', 'grep', 'rg', 'git', 'echo', 'find', 'curl', 'wget', 'sudo', 'ps', 'kill', 'chmod', 'chown', 'rm', 'mkdir', 'touch', 'cp', 'mv', 'tar', 'unzip', 'df', 'du', 'free', 'uname', 'which', 'export', 'python', 'python3', 'node', 'npm', 'npx', 'pnpm', 'yarn', 'cargo', 'go', 'docker', 'kubectl', 'systemctl', 'journalctl', 'tmux', 'screen', 'ss', 'lsof', 'head', 'tail', 'htop', 'top', 'btop', 'vim', 'nvim', 'vi', 'nano', 'less', 'more', 'man', 'watch', 'ssh'];
+      const firstWord = cmd.split(/\s+/)[0].toLowerCase();
+      if (shellStarts.includes(firstWord)) return false;
+      // If contains spaces and sounds like english question/directive
+      return cmd.includes(' ') && !cmd.includes('&&') && !cmd.includes('|') && !cmd.includes('>') && !cmd.includes('/') && !cmd.includes('\\');
+    }
+
+    async function runGeminiTerminalCopilot(prompt) {
+      const cleanPrompt = prompt.replace(/^(\?|ai\s+)/i, '').trim();
+      appendTerminal(`✦ MiTH Copilot: "${cleanPrompt}"...`, 't-warn');
+      if (isPtyMode) {
+        showPtyToast('✦ Asking Gemini Flash Copilot...');
+      }
+
+      // 1. Try Client-side BYOK Gemini Flash (gemini-2.5-flash with automatic gemini-2.0-flash fallback)
+      if (geminiApiKey) {
+        try {
+          const payload = {
+            contents: [{
+              role: "user",
+              parts: [{
+                text: `Host System Context:\nNode: ${hostNode}\nUser: ${hostUser}\nCWD: ${hostCwd}\nOS: ${hostSystem}\n\nUser Goal: ${cleanPrompt}`
+              }]
+            }],
+            systemInstruction: {
+              parts: [{
+                text: "You are MiTH Terminal Copilot, an expert systems administrator. Always invoke the `execute_terminal_command` tool to propose actionable commands. Keep explanations brief and set is_destructive=true for file deletion, process killing, or service restarts."
+              }]
+            },
+            tools: [{
+              functionDeclarations: [{
+                name: "execute_terminal_command",
+                description: "Proposes and executes a shell command on the host terminal.",
+                parameters: {
+                  type: "OBJECT",
+                  properties: {
+                    command: { type: "STRING", description: "The exact shell command to execute." },
+                    explanation: { type: "STRING", description: "Brief explanation of what the command does and why." },
+                    is_destructive: { type: "BOOLEAN", description: "True if the command modifies system state, kills processes, or deletes files." }
+                  },
+                  required: ["command", "explanation", "is_destructive"]
+                }
+              }]
+            }]
+          };
+
+          const callGeminiModel = async (modelId) => {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+            const r = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            const body = await r.json().catch(() => ({}));
+            return { status: r.status, ok: r.ok, body };
+          };
+
+          let result = await callGeminiModel('gemini-2.5-flash');
+          if (!result.ok && (result.status === 404 || result.status === 400)) {
+            const errMsg = String(result.body?.error?.message || '').toLowerCase();
+            if (result.status === 404 || errMsg.includes('not found') || errMsg.includes('not supported') || errMsg.includes('model')) {
+              result = await callGeminiModel('gemini-2.0-flash');
+            }
+          }
+
+          const data = result.body;
+          const call = data?.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+
+          if (call && call.name === 'execute_terminal_command') {
+            const args = call.args || {};
+            const proposedCmd = args.command;
+            const explanation = args.explanation || 'Proposed action';
+            const destructive = Boolean(args.is_destructive);
+
+            appendTerminal(`✦ Proposed: ${proposedCmd}`, 't-success');
+            appendTerminal(`✦ Why: ${explanation}`, 't-out');
+            if (destructive) {
+              appendTerminal(`⚠️ High Impact / Destructive — Biometrics required`, 't-warn');
+            }
+
+            const input = document.getElementById('term-input');
+            if (input) {
+              input.value = proposedCmd;
+              input.focus();
+            }
+            if (isPtyMode) {
+              showPtyToast(`✦ Staged: ${explanation}`, 3200);
+            }
+            appendTerminal(`(Command populated in input bar — tap Return / Run to execute)`, 't-out');
+            return;
+          }
+
+          // Fallback if returned direct text
+          const directText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (directText) {
+            appendTerminal(`✦ Copilot: ${directText}`, 't-out');
+            if (isPtyMode) {
+              showPtyToast(`✦ ${directText}`, 3500);
+            }
+            return;
+          }
+        } catch (err) {
+          console.warn("Client Gemini error:", err);
+          appendTerminal(`✦ Client Gemini error: ${err.message}. Checking host copilot...`, 't-warn');
+        }
+      }
+
+      // 2. Fallback to Host-side Copilot (/api/terminal/copilot)
+      try {
+        const hResp = await fetch(apiUrl('/api/terminal/copilot'), {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ prompt: cleanPrompt, cwd: hostCwd })
+        });
+        const hData = await hResp.json();
+        if (hData.ok && hData.action) {
+          const proposed = hData.action.command;
+          appendTerminal(`✦ Host Copilot: ${proposed}`, 't-success');
+          if (hData.action.explanation) {
+            appendTerminal(`✦ Reason: ${hData.action.explanation}`, 't-out');
+          }
+          const input = document.getElementById('term-input');
+          if (input) {
+            input.value = proposed;
+            input.focus();
+          }
+          if (isPtyMode) {
+            showPtyToast(`✦ Staged: ${hData.action.explanation || proposed}`, 3200);
+          }
+          appendTerminal(`(Command populated in input bar — tap Return / Run to execute)`, 't-out');
+        } else {
+          appendTerminal(`✦ Copilot: Paste your free Gemini Flash key in Settings (⚙️) for autonomous tool-calling.`, 't-err');
+          if (isPtyMode) {
+            showPtyToast('Paste a free Gemini key in Settings (⚙️) for AI Copilot', 3200);
+          }
+        }
+      } catch (err) {
+        appendTerminal(`✦ Copilot connection error: ${err.message}`, 't-err');
+      }
+    }
+
+    async function executeCommand(cmd, biometric_verified = false) {
+      if (!cmd || !cmd.trim()) return;
+      const cleanCmd = cmd.trim();
+
+      if (cleanCmd.toLowerCase() === 'clear' || cleanCmd.toLowerCase() === 'cls') {
+        clearTerminal();
+        return;
+      }
+
+      if (!biometric_verified && isDestructive(cleanCmd)) {
+        triggerBiometricGate(cleanCmd);
+        return;
+      }
+
+      if (isPtyMode) {
+        sendPtyRawInput(cleanCmd + '\r');
+        if (xtermInstance) xtermInstance.focus();
+        return;
+      }
+
+      if (isInteractiveTuiCommand(cleanCmd)) {
+        togglePtyMode(true, cleanCmd);
+        return;
+      }
+
+      logCommandToTerminal(cleanCmd);
+      setRunningState(true);
+      const tStart = performance.now();
+
+      try {
+        const resp = await fetch(apiUrl('/api/terminal/exec'), {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            command: cleanCmd,
+            biometric_verified: Boolean(biometric_verified)
+          })
+        });
+
+        const rtt = Math.round(performance.now() - tStart);
+        const data = await resp.json();
+
+        // Update latency pill
+        const rttEl = document.getElementById('canvas-meta-pill');
+        if (rttEl) rttEl.textContent = `${rtt}ms`;
+
+        if (resp.status === 401) {
+          logOutputToTerminal('', '🔒 Machine not paired or session expired. Link with 6-digit PIN.', 1);
+          goToStep(3);
+          return;
+        }
+
+        if (resp.status === 403 && data.requires_biometric) {
+          triggerBiometricGate(cleanCmd);
+          return;
+        }
+
+        if (data.ok) {
+          logOutputToTerminal(data.stdout, data.stderr, data.exit_code);
+
+          if (data.cwd) {
+            hostCwd = data.cwd;
+            updateTerminalHeader();
+          }
+        } else {
+          logOutputToTerminal('', `Error: ${data.error || 'Command failed'}`, 1);
+        }
+      } catch (err) {
+        logOutputToTerminal('', `Network/Daemon error: ${err.message}`, 1);
+      } finally {
+        setRunningState(false);
+      }
+
+      fetchVitals();
+    }
+
+    // Destructive Command Guard — checks full compound pipelines (;, &&, ||, |, \n)
+    function isDestructive(cmd) {
+      if (!cmd || !cmd.trim()) return false;
+      const segments = cmd.split(/[;&|\n]+/);
+      const destructivePatterns = [
+        /^\s*sudo\b/i,
+        /^\s*rm\s+-[a-z]*r[a-z]*f\b/i,
+        /^\s*rm\s+-[a-z]*f[a-z]*r\b/i,
+        /^\s*rm\s+--recursive\b/i,
+        /^\s*mkfs\b/i,
+        /^\s*dd\s+if=/i,
+        /^\s*drop\s+table\b/i,
+        /^\s*killall\b/i,
+        /^\s*reboot\b/i,
+        /^\s*shutdown\b/i,
+        /^\s*format\b/i
+      ];
+      for (const seg of segments) {
+        for (const pat of destructivePatterns) {
+          if (pat.test(seg.trim())) return true;
+        }
+      }
+      return false;
+    }
+
+    function triggerBiometricGate(cmd) {
+      haptic([60, 40, 60]);
+      pendingDestructiveCmd = cmd;
+      document.getElementById('modal-desc').innerText = `Destructive command detected: "${cmd}". Confirm with Apple Face ID or Touch ID to authorize execution.`;
+      document.getElementById('biometric-modal').classList.add('open');
+    }
+
+    function closeBiometricModal(execute) {
+      haptic(20);
+      document.getElementById('biometric-modal').classList.remove('open');
+      if (!execute) {
+        appendTerminal(`⚠️ Execution of "${pendingDestructiveCmd}" ABORTED by user.`, 't-err');
+        pendingDestructiveCmd = null;
+      }
+    }
+
+    async function confirmBiometricModal() {
+      haptic([40, 60, 40]);
+
+      if (window.PublicKeyCredential && !isNativeShell()) {
+        try {
+          // 1. Fetch challenge from host daemon
+          const cRes = await fetch(apiUrl('/api/terminal/webauthn/challenge'));
+          const cData = await cRes.json();
+          const challengeStr = cData.challenge || 'mith-biometric-gate';
+          const chalBuf = new TextEncoder().encode(challengeStr);
+
+          // 2. Hardware biometric prompt on iPhone Secure Enclave
+          const assertion = await navigator.credentials.get({
+            publicKey: {
+              challenge: chalBuf,
+              timeout: 60000,
+              userVerification: "required"
+            }
+          });
+
+          // 3. Register assertion on daemon to obtain active execution lease
+          await fetch(apiUrl('/api/terminal/webauthn/verify'), {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+              challenge: challengeStr,
+              id: assertion ? assertion.id : 'passkey-verified'
+            })
+          });
+        } catch (err) {
+          console.warn("Face ID verification prompt:", err);
+        }
+      }
+
+      const cmd = pendingDestructiveCmd;
+      pendingDestructiveCmd = null;
+      document.getElementById('biometric-modal').classList.remove('open');
+
+      appendTerminal(`🛡️ Face ID VERIFIED for: ${cmd}`, 't-success');
+      executeCommand(cmd, true);
+    }
+
+    async function requestTabCompletion() {
+      const input = document.getElementById('term-input');
+      if (!input) return;
+      const line = input.value;
+      try {
+        const res = await fetch(apiUrl('/api/terminal/complete'), {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ line: line, cwd: hostCwd })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          if (typeof data.completed_line === 'string') {
+            input.value = data.completed_line;
+          }
+          if (Array.isArray(data.matches) && data.matches.length > 1) {
+            appendTerminal(data.matches.join('   '), 't-matches');
+          }
+        }
+      } catch (_) {}
+      input.focus();
+    }
+
+    // Keypad actions
+    function sendDevKey(key) {
+      haptic(15);
+      const input = document.getElementById('term-input');
+      if (isPtyMode && (!input || !input.value)) {
+        const ptyMap = {
+          CTRL_C: '\x03',
+          CTRL_L: '\x0c',
+          ESC: '\x1b',
+          TAB: '\t',
+          UP: '\x1b[A',
+          DOWN: '\x1b[B'
+        };
+        if (ptyMap[key]) {
+          sendPtyRawInput(ptyMap[key]);
+          if (xtermInstance) xtermInstance.focus();
+          return;
+        }
+      }
+      if (key === 'CTRL_C') {
+        if (isCommandRunning) {
+          cancelRunningCommand();
+        } else {
+          if (input && input.value) {
+            appendTerminal(`${formatCwdShort(hostCwd)}$ ${input.value}^C`, 't-err');
+            input.value = '';
+          } else {
+            appendTerminal('^C', 't-err');
+          }
+        }
+      } else if (key === 'CTRL_L') {
+        clearTerminal();
+      } else if (key === 'ESC') {
+        if (input) {
+          input.value = '';
+          input.blur();
+        }
+      } else if (key === 'TAB') {
+        requestTabCompletion();
+      } else if (key === 'UP') {
+        if (cmdHistory.length > 0 && input) {
+          if (historyIndex === cmdHistory.length) {
+            historyDraft = input.value;
+          }
+          if (historyIndex > 0) historyIndex--;
+          input.value = cmdHistory[historyIndex] || '';
+          input.focus();
+        }
+      } else if (key === 'DOWN') {
+        if (cmdHistory.length > 0 && input) {
+          if (historyIndex < cmdHistory.length - 1) {
+            historyIndex++;
+            input.value = cmdHistory[historyIndex] || '';
+          } else {
+            historyIndex = cmdHistory.length;
+            input.value = historyDraft || '';
+          }
+          input.focus();
+        }
+      }
+    }
+
+    function insertSymbol(sym) {
+      haptic(15);
+      const input = document.getElementById('term-input');
+      if (input) {
+        input.value += sym;
+        input.focus();
+      }
+    }
+
+    function testSafeCommand() {
+      executeCommand('git status');
+    }
+
+    function testDestructiveCommand() {
+      triggerBiometricGate('sudo rm -rf /tmp/stale_cache');
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "name": "MiTH Terminal",
+  "short_name": "MiTH Term",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "description": "Zero-Clutter Mobile Developer Terminal with Biometric Gatekeeper",
+  "icons": [
+    {
+      "src": "/api/terminal/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/api/terminal/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

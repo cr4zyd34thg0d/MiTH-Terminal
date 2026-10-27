@@ -1,0 +1,23 @@
+# Secrets & local runtime credentials
+.env
+.env.*
+!.env.example
+pairing_vault.json
+
+# Python bytecode & virtual environments
+__pycache__/
+*.pyc
+.venv/
+
+# Node / Capacitor / mobile build artifacts
+node_modules/
+dist/
+ios/
+android/
+
+# Downloaded tunnel binaries & runtime logs
+bin/cloudflared*
+*.log
+
+# OS metadata
+.DS_Store

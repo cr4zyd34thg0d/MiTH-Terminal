@@ -1,0 +1,41 @@
+{
+  "name": "mith-terminal",
+  "version": "1.2.0",
+  "description": "Mobile Developer Console with Multi-Session Live PTY, Zero-Config HTTPS Tunneling, and WebAuthn Biometric Gatekeeper",
+  "main": "bin/mith-terminal.js",
+  "bin": {
+    "mith-terminal": "./bin/mith-terminal.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cr4zyd34thg0d/MiTH-Terminal.git"
+  },
+  "homepage": "https://github.com/cr4zyd34thg0d/MiTH-Terminal#readme",
+  "scripts": {
+    "start": "python3 daemon/server.py --port 8790",
+    "cap:sync": "npx cap sync",
+    "cap:open:ios": "npx cap open ios"
+  },
+  "keywords": [
+    "terminal",
+    "pty",
+    "xterm",
+    "mobile",
+    "ios",
+    "android",
+    "pwa",
+    "capacitor",
+    "face-id",
+    "webauthn",
+    "biometric",
+    "ai-terminal",
+    "gemini"
+  ],
+  "author": "MiTH",
+  "license": "MIT",
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0"
+  }
+}

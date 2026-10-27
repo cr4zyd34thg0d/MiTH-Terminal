@@ -1,0 +1,15 @@
+{
+  "appId": "dev.mith.terminal",
+  "appName": "MiTH Terminal",
+  "webDir": "client",
+  "bundledWebRuntime": false,
+  "ios": {
+    "contentInset": "always",
+    "preferredContentMode": "mobile",
+    "scheme": "MiTHTerminal"
+  },
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  }
+}

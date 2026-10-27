@@ -1,5 +1,6 @@
 # MiTH Terminal
 
+[![CI](https://github.com/cr4zyd34thg0d/MiTH-Terminal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/cr4zyd34thg0d/MiTH-Terminal/actions/workflows/ci.yml)
 [![Latest Release](https://img.shields.io/github/v/release/cr4zyd34thg0d/MiTH-Terminal?style=flat-square&color=8b5cf6&label=Release)](https://github.com/cr4zyd34thg0d/MiTH-Terminal/releases/latest)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero_(Python_Stdlib)-10b981?style=flat-square)](#30-second-setup-phone-to-computer)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3b82f6?style=flat-square&logo=python&logoColor=white)](#30-second-setup-phone-to-computer)

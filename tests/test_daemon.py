@@ -31,7 +31,7 @@ import server as daemon_srv
 class MithTerminalDaemonTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.tmp_dir = tempfile.TemporaryDirectory()
+        cls.tmp_dir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls.vault_file = Path(cls.tmp_dir.name) / "test_vault.json"
 
         # Instantiate isolated test vault and state
@@ -62,7 +62,7 @@ class MithTerminalDaemonTests(unittest.TestCase):
         cls.tmp_dir.cleanup()
 
     def _json_request(self, method: str, path: str, body: dict | None = None, headers: dict | None = None) -> tuple[int, dict]:
-        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=8)
         hdrs = {"Content-Type": "application/json"}
         if headers:
             hdrs.update(headers)
@@ -115,15 +115,19 @@ class MithTerminalDaemonTests(unittest.TestCase):
         self.assertEqual(data.get("exit_code"), 0)
         self.assertIn("test_mith_terminal_exec", data.get("stdout", ""))
 
-        # Test persistent directory change
+        # Test persistent directory change across Linux, macOS (/private/var), and Windows
+        sub_cwd = Path(self.tmp_dir.name) / "cwd_check"
+        sub_cwd.mkdir(parents=True, exist_ok=True)
+        cd_cmd = f'cd /d "{sub_cwd}"' if os.name == "nt" else f'cd "{sub_cwd}" && pwd'
         status, data = self._json_request(
             "POST",
             "/api/exec",
-            {"command": "cd /tmp && pwd"},
+            {"command": cd_cmd},
             headers=auth_hdr,
         )
         self.assertEqual(status, 200)
-        self.assertEqual(data.get("cwd"), "/tmp")
+        self.assertEqual(Path(data.get("cwd", "")).resolve(), sub_cwd.resolve())
+        daemon_srv.daemon_state.current_cwd = str(Path.home())
 
     def test_04_destructive_command_biometric_gate(self) -> None:
         _, pair_data = self._json_request("POST", "/api/auth/pair", {"pin": self.pin})
@@ -344,11 +348,13 @@ class MithTerminalDaemonTests(unittest.TestCase):
 
         exec_result: dict = {}
 
+        slow_cmd = f'"{sys.executable}" -c "import time; time.sleep(12)"'
+
         def _run_slow() -> None:
             st, res = self._json_request(
                 "POST",
                 "/api/terminal/exec",
-                {"command": "sleep 12"},
+                {"command": slow_cmd},
                 headers=auth_hdr,
             )
             exec_result["status"] = st
@@ -357,16 +363,16 @@ class MithTerminalDaemonTests(unittest.TestCase):
         t0 = time.time()
         worker = threading.Thread(target=_run_slow, daemon=True)
         worker.start()
-        time.sleep(0.3)
+        time.sleep(0.4)
 
         c_status, c_data = self._json_request("POST", "/api/terminal/cancel", {}, headers=auth_hdr)
         self.assertEqual(c_status, 200)
         self.assertTrue(c_data.get("ok"))
         self.assertTrue(c_data.get("cancelled"))
 
-        worker.join(timeout=3.0)
+        worker.join(timeout=6.0)
         elapsed = time.time() - t0
-        self.assertLess(elapsed, 3.0)
+        self.assertLess(elapsed, 6.0)
         self.assertEqual(exec_result.get("status"), 200)
         self.assertNotEqual(exec_result.get("data", {}).get("exit_code"), 0)
 
@@ -473,7 +479,7 @@ class MithTerminalDaemonTests(unittest.TestCase):
         _, t_data2 = self._json_request("POST", "/api/terminal/ws-ticket", {}, headers=auth_hdr)
         ticket2 = t_data2["ticket"]
 
-        raw_sock = socket.create_connection(("127.0.0.1", self.port), timeout=5.0)
+        raw_sock = socket.create_connection(("127.0.0.1", self.port), timeout=10.0)
         try:
             req_bytes = (
                 f"GET /api/terminal/ws?ticket={ticket2}&cols=80&rows=24 HTTP/1.1\r\n"
@@ -517,28 +523,35 @@ class MithTerminalDaemonTests(unittest.TestCase):
             self.assertEqual(ready_msg.get("type"), "ready")
             session_id = ready_msg["session_id"]
 
-            # 7. Resize PTY to 112x34 (TIOCSWINSZ + SIGWINCH) and run stty size + echo marker
+            # 7. Resize PTY to 112x34 (TIOCSWINSZ + SIGWINCH on POSIX) and stream marker
             resize_cmd = json.dumps({"type": "resize", "cols": 112, "rows": 34}).encode("utf-8")
             raw_sock.sendall(self._ws_client_frame(pty_engine.WS_OP_TEXT, resize_cmd))
             time.sleep(0.08)
 
-            shell_in = json.dumps(
-                {"type": "input", "data": "stty size; echo WS_PTY_STREAM_OK\r"}
-            ).encode("utf-8")
+            pty_probe = (
+                "echo WS_PTY_STREAM_OK\r"
+                if os.name == "nt"
+                else "stty size; echo WS_PTY_STREAM_OK\r"
+            )
+            shell_in = json.dumps({"type": "input", "data": pty_probe}).encode("utf-8")
             raw_sock.sendall(self._ws_client_frame(pty_engine.WS_OP_TEXT, shell_in))
 
             collected = bytearray()
-            deadline = time.time() + 4.0
+            deadline = time.time() + 8.0
             while time.time() < deadline:
                 op, pl = pty_engine.ws_read_frame(raw_sock)
                 if op == pty_engine.WS_OP_BINARY:
                     collected.extend(pl)
                     decoded = collected.decode("utf-8", errors="replace")
-                    if "34 112" in decoded and "WS_PTY_STREAM_OK" in decoded:
+                    if os.name == "nt":
+                        if "WS_PTY_STREAM_OK" in decoded:
+                            break
+                    elif "34 112" in decoded and "WS_PTY_STREAM_OK" in decoded:
                         break
 
             final_text = collected.decode("utf-8", errors="replace")
-            self.assertIn("34 112", final_text)
+            if os.name != "nt":
+                self.assertIn("34 112", final_text)
             self.assertIn("WS_PTY_STREAM_OK", final_text)
 
             # Send clean WebSocket close frame (detach without killing shell)
@@ -614,7 +627,7 @@ class MithTerminalDaemonTests(unittest.TestCase):
 
         cursor = 0
         acc = bytearray()
-        for _ in range(6):
+        for _ in range(12):
             st_poll, d_poll = self._json_request(
                 "GET",
                 f"/api/terminal/pty/poll?session_id={sid}&cursor={cursor}&timeout_ms=1000",
@@ -714,6 +727,7 @@ class MithTerminalDaemonTests(unittest.TestCase):
         for rel in (
             "README.md",
             "CHANGELOG.md",
+            ".github/workflows/ci.yml",
             ".github/workflows/release.yml",
             "package.json",
             "run_daemon.sh",

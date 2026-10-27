@@ -819,7 +819,15 @@ class DaemonState:
                 if proc.poll() is None:
                     os.killpg(pgid, signal.SIGTERM)
             else:
-                proc.terminate()
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=3.0,
+                    check=False,
+                )
+                if proc.poll() is None:
+                    proc.terminate()
             return True, pid
         except ProcessLookupError:
             return False, None

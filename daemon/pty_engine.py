@@ -202,9 +202,10 @@ class PtySession:
         env["LINES"] = str(self.rows)
 
         if platform.system() == "Windows":
-            shell_bin = shutil.which("powershell.exe") or "cmd.exe"
+            ps_bin = shutil.which("pwsh.exe") or shutil.which("powershell.exe")
+            shell_argv = [ps_bin, "-NoLogo", "-NoProfile"] if ps_bin else ["cmd.exe", "/Q"]
             self.proc = subprocess.Popen(
-                [shell_bin],
+                shell_argv,
                 cwd=start_dir,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -414,7 +415,8 @@ class PtySession:
         try:
             if platform.system() == "Windows":
                 if self.proc and self.proc.stdin:
-                    self.proc.stdin.write(raw)
+                    win_raw = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n").replace(b"\n", b"\r\n")
+                    self.proc.stdin.write(win_raw)
                     self.proc.stdin.flush()
                     return True
                 return False
@@ -468,7 +470,16 @@ class PtySession:
                     if self.proc.poll() is None:
                         os.killpg(pgid, signal.SIGTERM)
                 else:
+                    if self.proc.stdin:
+                        try:
+                            self.proc.stdin.close()
+                        except OSError:
+                            pass
                     self.proc.terminate()
+                    try:
+                        self.proc.wait(timeout=1.0)
+                    except subprocess.TimeoutExpired:
+                        self.proc.kill()
             except OSError:
                 pass
         self._mark_terminated()

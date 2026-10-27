@@ -202,10 +202,9 @@ class PtySession:
         env["LINES"] = str(self.rows)
 
         if platform.system() == "Windows":
-            ps_bin = shutil.which("pwsh.exe") or shutil.which("powershell.exe")
-            shell_argv = [ps_bin, "-NoLogo", "-NoProfile"] if ps_bin else ["cmd.exe", "/Q"]
+            comspec = os.environ.get("COMSPEC") or shutil.which("cmd.exe") or "cmd.exe"
             self.proc = subprocess.Popen(
-                shell_argv,
+                [comspec],
                 cwd=start_dir,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,

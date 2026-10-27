@@ -1704,8 +1704,23 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
                     )
                     shell_cmd = ["bash", "-O", "expand_aliases", "-c", wrapped_cmd]
                 else:
-                    wrapped_cmd = f"{cmd} & echo {sentinel}%CD%"
-                    shell_cmd = ["cmd.exe", "/c", wrapped_cmd]
+                    ps_exe = shutil.which("pwsh") or shutil.which("powershell") or "powershell.exe"
+                    ps_script = (
+                        f"$LASTEXITCODE = 0\n"
+                        f"{cmd}\n"
+                        f"$__mith_ec = if (-not $?) {{ if ($LASTEXITCODE -ne 0) {{ $LASTEXITCODE }} else {{ 1 }} }} else {{ $LASTEXITCODE }}\n"
+                        f"[Console]::Out.WriteLine('{sentinel}' + (Get-Location).Path)\n"
+                        f"exit $__mith_ec\n"
+                    )
+                    encoded_ps = base64.b64encode(ps_script.encode("utf-16-le")).decode("ascii")
+                    shell_cmd = [
+                        ps_exe,
+                        "-NoLogo",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-EncodedCommand",
+                        encoded_ps,
+                    ]
 
                 proc = subprocess.Popen(
                     shell_cmd,

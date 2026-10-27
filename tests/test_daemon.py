@@ -118,7 +118,7 @@ class MithTerminalDaemonTests(unittest.TestCase):
         # Test persistent directory change across Linux, macOS (/private/var), and Windows
         sub_cwd = Path(self.tmp_dir.name) / "cwd_check"
         sub_cwd.mkdir(parents=True, exist_ok=True)
-        cd_cmd = f'cd /d "{sub_cwd}"' if os.name == "nt" else f'cd "{sub_cwd}" && pwd'
+        cd_cmd = f'cd "{sub_cwd}"' if os.name == "nt" else f'cd "{sub_cwd}" && pwd'
         status, data = self._json_request(
             "POST",
             "/api/exec",
@@ -348,7 +348,7 @@ class MithTerminalDaemonTests(unittest.TestCase):
 
         exec_result: dict = {}
 
-        slow_cmd = f'"{sys.executable}" -c "import time; time.sleep(12)"'
+        slow_cmd = "Start-Sleep -Seconds 12" if os.name == "nt" else "sleep 12"
 
         def _run_slow() -> None:
             st, res = self._json_request(

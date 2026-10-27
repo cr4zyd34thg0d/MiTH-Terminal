@@ -58,7 +58,7 @@ jobs:
           }
           & .\start.ps1 --help | Out-Null
 
-      - name: Run 17-test daemon, WebSocket CSWSH, Multi-PTY, QR & OPSEC suite
+      - name: Run 18-test daemon, WebSocket CSWSH, Multi-PTY, QR, OPSEC & AppSec suite
         env:
           MITH_NO_AUTO_CLOUDFLARED: "1"
           PYTHONUTF8: "1"

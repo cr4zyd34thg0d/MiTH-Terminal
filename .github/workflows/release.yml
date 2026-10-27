@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing git tag to package and publish (e.g. v1.2.0)"
+        description: "Existing git tag to package and publish (e.g. v1.2.1)"
         required: true
         type: string
 
@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run 17-test daemon, WebSocket, QR & OPSEC verification gate
+      - name: Run 18-test daemon, WebSocket, QR, OPSEC & AppSec verification gate
         env:
           MITH_NO_AUTO_CLOUDFLARED: "1"
         run: python3 -m unittest discover -v -s tests

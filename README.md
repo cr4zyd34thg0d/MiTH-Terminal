@@ -32,7 +32,7 @@ npx github:cr4zyd34thg0d/MiTH-Terminal
 ```
 
 ### No Git Installed? (One-Click Zip / Tarball)
-Download **[`MiTH-Terminal-v1.2.0.zip`](https://github.com/cr4zyd34thg0d/MiTH-Terminal/releases/download/v1.2.0/MiTH-Terminal-v1.2.0.zip)** (Windows / macOS) or **[`MiTH-Terminal-v1.2.0.tar.gz`](https://github.com/cr4zyd34thg0d/MiTH-Terminal/releases/download/v1.2.0/MiTH-Terminal-v1.2.0.tar.gz)** (Linux / macOS / WSL) directly from the **[Official v1.2.0 Release Page](https://github.com/cr4zyd34thg0d/MiTH-Terminal/releases/tag/v1.2.0)**, extract it, and run `./start.sh` or `.\start.ps1`.
+Download **[`MiTH-Terminal-v1.2.1.zip`](https://github.com/cr4zyd34thg0d/MiTH-Terminal/releases/download/v1.2.1/MiTH-Terminal-v1.2.1.zip)** (Windows / macOS) or **[`MiTH-Terminal-v1.2.1.tar.gz`](https://github.com/cr4zyd34thg0d/MiTH-Terminal/releases/download/v1.2.1/MiTH-Terminal-v1.2.1.tar.gz)** (Linux / macOS / WSL) directly from the **[Official v1.2.1 Release Page](https://github.com/cr4zyd34thg0d/MiTH-Terminal/releases/tag/v1.2.1)**, extract it, and run `./start.sh` or `.\start.ps1`.
 
 ### What Happens Automatically on First Run
 1. **Zero-Dependency Host Daemon**: Starts a lightweight Python 3.10+ companion daemon on port `8790` using only the standard library.
@@ -117,8 +117,10 @@ ai show which process is listening on port 3000
 ```
 
 - **Outbound-Only Connectivity**: Your computer initiates an outbound TLS connection to Cloudflare's edge; your home IP and router ports remain closed to inbound internet scans.
+- **DNS Rebinding, Stale-Tunnel & Zero-Wildcard CORS Defense**: Strict `Host` allowlisting rejects untrusted external or stale `*.trycloudflare.com` hostnames (`HTTP 403`), strips `Access-Control-Allow-Origin: *`, blocks cross-origin `POST` mutations (`HTTP 403`), and caps pre-allocation JSON bodies at `64 KiB` (`HTTP 413`).
+- **Zero Unauthenticated Recon**: Unauthenticated `/api/ping` health probes return strictly redacted placeholders (`Protected Host` / `locked`) until a paired `Bearer` token is authenticated.
 - **Brute-Force & Timing Resistance**: Pairing PINs are verified in constant time via `hmac.compare_digest` and enforce an automatic lockout after **5 failed attempts**.
-- **Zero Bearer Tokens in URLs & CSWSH Protection**: Live PTY WebSockets authenticate via **single-use, 30-second cryptographic tickets** (`/api/terminal/ws-ticket`) paired with strict `Origin` header validation to block Cross-Site WebSocket Hijacking (CSWSH).
+- **Server-Enforced WebAuthn Leases & CSWSH Protection**: Enrolled Face ID / Touch ID passkeys enforce server-minted challenge-verify execution leases (blocking client boolean bypasses), while live PTY WebSockets authenticate via **single-use, 30-second cryptographic tickets** (`/api/terminal/ws-ticket`) paired with strict `Origin` header validation.
 - **Least-Privilege Local Vault**: Paired device tokens are SHA-256 hashed at rest inside `~/.mith-terminal/pairing_vault.json` with `0600` owner-only file permissions.
 
 ### Running Strictly on Local Wi-Fi / LAN (`--no-tunnel`)

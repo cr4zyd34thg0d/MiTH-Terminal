@@ -713,6 +713,8 @@ class MithTerminalDaemonTests(unittest.TestCase):
         )
         for rel in (
             "README.md",
+            "CHANGELOG.md",
+            ".github/workflows/release.yml",
             "package.json",
             "run_daemon.sh",
             "start.sh",

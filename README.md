@@ -1,5 +1,6 @@
 # MiTH Terminal
 
+[![Latest Release](https://img.shields.io/github/v/release/cr4zyd34thg0d/MiTH-Terminal?style=flat-square&color=8b5cf6&label=Release)](https://github.com/cr4zyd34thg0d/MiTH-Terminal/releases/latest)
 [![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero_(Python_Stdlib)-10b981?style=flat-square)](#30-second-setup-phone-to-computer)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3b82f6?style=flat-square&logo=python&logoColor=white)](#30-second-setup-phone-to-computer)
 [![Multi-Session PTY](https://img.shields.io/badge/Live_PTY-Up_to_8_Tabs_(xterm.js)-6366f1?style=flat-square)](#key-features)
@@ -28,6 +29,9 @@ git clone https://github.com/cr4zyd34thg0d/MiTH-Terminal.git; cd MiTH-Terminal; 
 ```bash
 npx github:cr4zyd34thg0d/MiTH-Terminal
 ```
+
+### No Git Installed? (One-Click Zip / Tarball)
+Download **[`MiTH-Terminal-v1.2.0.zip`](https://github.com/cr4zyd34thg0d/MiTH-Terminal/releases/download/v1.2.0/MiTH-Terminal-v1.2.0.zip)** (Windows / macOS) or **[`MiTH-Terminal-v1.2.0.tar.gz`](https://github.com/cr4zyd34thg0d/MiTH-Terminal/releases/download/v1.2.0/MiTH-Terminal-v1.2.0.tar.gz)** (Linux / macOS / WSL) directly from the **[Official v1.2.0 Release Page](https://github.com/cr4zyd34thg0d/MiTH-Terminal/releases/tag/v1.2.0)**, extract it, and run `./start.sh` or `.\start.ps1`.
 
 ### What Happens Automatically on First Run
 1. **Zero-Dependency Host Daemon**: Starts a lightweight Python 3.10+ companion daemon on port `8790` using only the standard library.

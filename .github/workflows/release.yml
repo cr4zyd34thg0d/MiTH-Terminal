@@ -1,0 +1,108 @@
+name: Publish Official Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing git tag to package and publish (e.g. v1.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Verify, Package & Publish GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run 17-test daemon, WebSocket, QR & OPSEC verification gate
+        env:
+          MITH_NO_AUTO_CLOUDFLARED: "1"
+        run: python3 -m unittest discover -v -s tests
+
+      - name: Build one-click .zip, .tar.gz & SHA256SUMS release assets
+        env:
+          RAW_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RAW_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)?$ ]]; then
+            echo "Invalid semantic tag: $RAW_TAG" >&2
+            exit 1
+          fi
+          mkdir -p dist
+          ARCHIVE_BASE="MiTH-Terminal-${RAW_TAG}"
+          git archive --format=zip --prefix="${ARCHIVE_BASE}/" -o "dist/${ARCHIVE_BASE}.zip" HEAD
+          git archive --format=tar.gz --prefix="${ARCHIVE_BASE}/" -o "dist/${ARCHIVE_BASE}.tar.gz" HEAD
+          (
+            cd dist
+            sha256sum "${ARCHIVE_BASE}.zip" "${ARCHIVE_BASE}.tar.gz" > SHA256SUMS.txt
+          )
+
+          python3 - "$RAW_TAG" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          tag = sys.argv[1]
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          pattern = re.compile(
+              rf"^## \[{re.escape(tag)}\][^\n]*\n(.*?)(?=^## \[|\Z)",
+              re.MULTILINE | re.DOTALL,
+          )
+          match = pattern.search(changelog)
+          body = match.group(1).strip() if match else changelog.strip()
+          sums = Path("dist/SHA256SUMS.txt").read_text(encoding="utf-8").strip()
+          notes = (
+              f"{body}\n\n"
+              f"### SHA-256 Checksums\n"
+              f"```text\n{sums}\n```\n"
+          )
+          Path("dist/RELEASE_NOTES.md").write_text(notes, encoding="utf-8")
+          PY
+
+      - name: Publish formal GitHub Release page with downloadable archives
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RAW_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          ARCHIVE_BASE="MiTH-Terminal-${RAW_TAG}"
+          TITLE="MiTH Terminal ${RAW_TAG} — Turnkey Mobile Developer Console"
+          if gh release view "$RAW_TAG" >/dev/null 2>&1; then
+            gh release upload "$RAW_TAG" \
+              "dist/${ARCHIVE_BASE}.zip" \
+              "dist/${ARCHIVE_BASE}.tar.gz" \
+              "dist/SHA256SUMS.txt" \
+              --clobber
+            gh release edit "$RAW_TAG" \
+              --title "$TITLE" \
+              --notes-file "dist/RELEASE_NOTES.md" \
+              --latest
+          else
+            gh release create "$RAW_TAG" \
+              "dist/${ARCHIVE_BASE}.zip" \
+              "dist/${ARCHIVE_BASE}.tar.gz" \
+              "dist/SHA256SUMS.txt" \
+              --verify-tag \
+              --title "$TITLE" \
+              --notes-file "dist/RELEASE_NOTES.md" \
+              --latest
+          fi

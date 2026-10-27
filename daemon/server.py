@@ -725,7 +725,7 @@ class TunnelManager:
             logger.info("Initializing zero-configuration Cloudflare Quick Tunnel on port %d...", self.port)
             try:
                 self.proc = subprocess.Popen(
-                    [cf_bin, "tunnel", "--url", f"http://127.0.0.1:{self.port}"],
+                    [cf_bin, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{self.port}"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -846,7 +846,7 @@ atexit.register(daemon_state.pty_manager.close_all)
 
 
 def _start_udp_discovery_responder(port: int = 8791, target_tcp_port: int = 8790) -> None:
-    """Listen for UDP discovery broadcasts and respond with host connection info."""
+    """Listen for UDP discovery broadcasts and respond with minimal non-sensitive service info."""
     def _responder() -> None:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -866,12 +866,8 @@ def _start_udp_discovery_responder(port: int = 8791, target_tcp_port: int = 8790
                     reply = json.dumps({
                         "ok": True,
                         "service": "mith-terminal",
-                        "host": platform.node(),
-                        "user": _current_username(),
                         "port": target_tcp_port,
-                        "tunnel_url": daemon_state.tunnel.tunnel_url,
                         "system": platform.system(),
-                        "release": platform.release(),
                     }).encode("utf-8")
                     sock.sendto(reply, addr)
             except socket.timeout:
@@ -882,21 +878,143 @@ def _start_udp_discovery_responder(port: int = 8791, target_tcp_port: int = 8790
     threading.Thread(target=_responder, name="mith-udp-discovery", daemon=True).start()
 
 
+MAX_JSON_BODY_BYTES = 65_536  # 64 KiB DoS ceiling per JSON API request
+
+
+def _is_ip_literal(hostname: str) -> bool:
+    """Return True if hostname is an IPv4 or IPv6 address literal (immune to DNS rebinding)."""
+    clean = hostname.strip("[]")
+    if not clean:
+        return False
+    for fam in (socket.AF_INET, socket.AF_INET6):
+        try:
+            socket.inet_pton(fam, clean)
+            return True
+        except OSError:
+            continue
+    return False
+
+
 class MithTerminalHandler(BaseHTTPRequestHandler):
-    def _add_security_headers(self) -> None:
+    def _is_valid_host_header(self) -> bool:
+        """Defend localhost/LAN consumers against DNS rebinding attacks."""
+        raw_host = (self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "").strip()
+        if not raw_host:
+            return True
+        first_host = raw_host.split(",")[0].strip()
+        if first_host.startswith("["):
+            host_only = first_host.split("]")[0] + "]"
+        else:
+            host_only = first_host.split(":")[0].lower()
+
+        if not host_only:
+            return True
+        if host_only in {"localhost", "127.0.0.1", "[::1]", "::1"}:
+            return True
+        if _is_ip_literal(host_only):
+            return True
+        node_low = platform.node().strip().lower()
+        if node_low and host_only in {node_low, f"{node_low}.local"}:
+            return True
+        if host_only.endswith((".local", ".ts.net")):
+            return True
+        if host_only.endswith(".trycloudflare.com") and daemon_state.tunnel.active:
+            active_cf_host = (urlparse(daemon_state.tunnel.tunnel_url).hostname or "").lower()
+            if not active_cf_host or host_only == active_cf_host:
+                return True
+        extra_allowed = {
+            h.strip().lower()
+            for h in os.getenv("MITH_ALLOWED_HOSTS", "").split(",")
+            if h.strip()
+        }
+        if host_only in extra_allowed:
+            return True
+        logger.warning("Blocked untrusted Host header (DNS rebinding guard): Host=%s", raw_host)
+        return False
+
+    def _evaluate_origin(self) -> tuple[bool, str | None]:
+        """
+        Validate browser Origin header against trusted same-host / local / tunnel origins.
+        Returns (is_allowed, echo_cors_origin_or_None).
+        """
+        origin_hdr = self.headers.get("Origin", "").strip()
+        if not origin_hdr:
+            return True, None
+        parsed = urlparse(origin_hdr)
+        scheme = (parsed.scheme or "").lower()
+        origin_host = (parsed.hostname or "").lower()
+        if not origin_host:
+            return False, None
+        if scheme in {"capacitor", "ionic"} and origin_host == "localhost":
+            return True, origin_hdr
+        raw_req_host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or ""
+        req_host = raw_req_host.split(",")[0].strip().split(":")[0].lower()
+        if origin_host == req_host:
+            return True, origin_hdr
+        safe_local = {"localhost", "127.0.0.1"}
+        if origin_host in safe_local and req_host in safe_local:
+            return True, origin_hdr
+        if origin_host.endswith(".ts.net") and (req_host in safe_local or req_host.endswith(".ts.net")):
+            return True, origin_hdr
+        tunnel_url = daemon_state.tunnel.tunnel_url or ""
+        if tunnel_url:
+            tunnel_host = (urlparse(tunnel_url).hostname or "").lower()
+            if tunnel_host and origin_host == tunnel_host:
+                return True, origin_hdr
+        return False, None
+
+    def _add_security_headers(self, is_html: bool = False) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-Biometric-Grant")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if is_html:
+            self.send_header(
+                "Content-Security-Policy",
+                "frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
+            )
+        allowed_origin, cors_origin = self._evaluate_origin()
+        if allowed_origin and cors_origin:
+            self.send_header("Access-Control-Allow-Origin", cors_origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-Biometric-Grant")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD")
+
+    def _read_json_body(self, allow_empty: bool = False) -> dict[str, Any] | None:
+        """Read and parse a bounded JSON request body (<= 64 KiB); sends HTTP error and returns None on failure."""
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Invalid Content-Length header."})
+            return None
+        if content_length < 0 or content_length > MAX_JSON_BODY_BYTES:
+            self._send_json(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                {"ok": False, "error": f"Request payload exceeds {MAX_JSON_BODY_BYTES} byte limit."},
+            )
+            return None
+        if content_length == 0:
+            if allow_empty:
+                return {}
+            self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Empty JSON body."})
+            return None
+        raw = self.rfile.read(content_length)
+        try:
+            parsed = json.loads(raw.decode("utf-8"))
+        except Exception:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Invalid JSON"})
+            return None
+        if not isinstance(parsed, dict):
+            self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Expected JSON object."})
+            return None
+        return parsed
 
     def _send_json(self, status: int, payload: dict[str, Any], extra_headers: dict[str, str] | None = None) -> None:
         data = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
-        self._add_security_headers()
+        self._add_security_headers(is_html=False)
         if extra_headers:
             for k, v in extra_headers.items():
                 self.send_header(k, v)
@@ -911,7 +1029,7 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             ct_header = content_type
         self.send_header("Content-Type", ct_header)
         self.send_header("Content-Length", str(len(data)))
-        self._add_security_headers()
+        self._add_security_headers(is_html=content_type.startswith("text/html"))
         if extra_headers:
             for k, v in extra_headers.items():
                 self.send_header(k, v)
@@ -942,32 +1060,15 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
         return _sha256_hex(tok) if tok else None
 
     def _is_allowed_ws_origin(self) -> bool:
-        origin_hdr = self.headers.get("Origin", "").strip()
-        if not origin_hdr:
-            return True
-        parsed = urlparse(origin_hdr)
-        scheme = (parsed.scheme or "").lower()
-        origin_host = (parsed.hostname or "").lower()
-        if not origin_host:
-            return False
-        if scheme in {"capacitor", "ionic"} and origin_host == "localhost":
-            return True
-        raw_req_host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or ""
-        req_host = raw_req_host.split(",")[0].strip().split(":")[0].lower()
-        if origin_host == req_host:
-            return True
-        safe_local = {"localhost", "127.0.0.1"}
-        if origin_host in safe_local and req_host in safe_local:
-            return True
-        if origin_host.endswith(".ts.net") and (req_host in safe_local or req_host.endswith(".ts.net")):
-            return True
-        tunnel_url = daemon_state.tunnel.tunnel_url or ""
-        if tunnel_url:
-            tunnel_host = (urlparse(tunnel_url).hostname or "").lower()
-            if tunnel_host and origin_host == tunnel_host:
-                return True
-        logger.warning("Blocked cross-origin WebSocket upgrade: Origin=%s Host=%s", origin_hdr, req_host)
-        return False
+        allowed, _ = self._evaluate_origin()
+        if not allowed:
+            raw_req_host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or ""
+            logger.warning(
+                "Blocked cross-origin WebSocket upgrade: Origin=%s Host=%s",
+                self.headers.get("Origin", ""),
+                raw_req_host,
+            )
+        return allowed
 
     def _resolve_ws_owner_hash(self, qs: dict[str, list[str]]) -> str | None:
         """
@@ -994,17 +1095,31 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
         return None
 
     def do_OPTIONS(self) -> None:
+        if not self._is_valid_host_header():
+            self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Forbidden Host header."})
+            return
+        allowed_origin, _ = self._evaluate_origin()
+        if not allowed_origin:
+            self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Forbidden cross-origin preflight."})
+            return
         self.send_response(HTTPStatus.NO_CONTENT)
         self._add_security_headers()
         self.end_headers()
 
     def do_HEAD(self) -> None:
+        if not self._is_valid_host_header():
+            self.send_response(HTTPStatus.FORBIDDEN)
+            self.end_headers()
+            return
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
-        self._add_security_headers()
+        self._add_security_headers(is_html=True)
         self.end_headers()
 
     def do_GET(self) -> None:
+        if not self._is_valid_host_header():
+            self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Forbidden Host header (DNS rebinding guard)."})
+            return
         path = self.path.split("?")[0]
 
         if path in ("/", "/index.html"):
@@ -1221,18 +1336,18 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "service": "mith-terminal-daemon",
-                    "version": "1.2.0",
-                    "host": platform.node(),
-                    "user": _current_username(),
-                    "home_dir": str(Path.home()),
+                    "version": "1.2.1",
+                    "host": platform.node() if authed else "Protected Host",
+                    "user": _current_username() if authed else "locked",
+                    "home_dir": str(Path.home()) if authed else "~",
                     "cwd": daemon_state.current_cwd if authed else "~",
                     "system": platform.system(),
-                    "release": platform.release(),
+                    "release": platform.release() if authed else "",
                     "arch": platform.machine(),
                     "uptime_seconds": time.time() - daemon_state.start_time,
                     "authenticated": authed,
-                    "lan_ip": daemon_state.lan_ip,
-                    "tunnel_url": daemon_state.tunnel.tunnel_url,
+                    "lan_ip": daemon_state.lan_ip if authed else "",
+                    "tunnel_url": daemon_state.tunnel.tunnel_url if authed else "",
                     "port": daemon_state.port,
                 },
             )
@@ -1245,11 +1360,11 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "authenticated": authed,
-                    "host": platform.node(),
-                    "user": _current_username(),
-                    "home_dir": str(Path.home()),
+                    "host": platform.node() if authed else "Protected Host",
+                    "user": _current_username() if authed else "locked",
+                    "home_dir": str(Path.home()) if authed else "~",
                     "cwd": daemon_state.current_cwd if authed else "~",
-                    "tunnel_url": daemon_state.tunnel.tunnel_url,
+                    "tunnel_url": daemon_state.tunnel.tunnel_url if authed else "",
                 },
             )
             return
@@ -1293,6 +1408,13 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Endpoint not found"})
 
     def do_POST(self) -> None:
+        if not self._is_valid_host_header():
+            self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Forbidden Host header (DNS rebinding guard)."})
+            return
+        allowed_origin, _ = self._evaluate_origin()
+        if not allowed_origin:
+            self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "Forbidden cross-origin POST request."})
+            return
         path = self.path.split("?")[0]
 
         if path in ("/api/ws-ticket", "/api/terminal/ws-ticket"):
@@ -1300,9 +1422,8 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             if not owner_hash:
                 self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "Unauthorized."})
                 return
-            content_length = int(self.headers.get("Content-Length", 0))
-            if content_length > 0:
-                _ = self.rfile.read(content_length)
+            if self._read_json_body(allow_empty=True) is None:
+                return
             ticket = daemon_state.pty_manager.mint_ws_ticket(owner_hash, ttl_seconds=30.0)
             self._send_json(HTTPStatus.OK, {"ok": True, "ticket": ticket, "ttl_seconds": 30})
             return
@@ -1312,12 +1433,9 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             if not owner_hash:
                 self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "Unauthorized."})
                 return
-            content_length = int(self.headers.get("Content-Length", 0))
-            raw = self.rfile.read(content_length) if content_length > 0 else b"{}"
-            try:
-                data = json.loads(raw.decode("utf-8"))
-            except Exception:
-                data = {}
+            data = self._read_json_body(allow_empty=True)
+            if data is None:
+                return
             cols = int(data.get("cols", 80))
             rows = int(data.get("rows", 26))
             req_sid = str(data.get("session_id") or "").strip() or None
@@ -1351,12 +1469,8 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             if not owner_hash:
                 self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "Unauthorized."})
                 return
-            content_length = int(self.headers.get("Content-Length", 0))
-            raw = self.rfile.read(content_length) if content_length > 0 else b"{}"
-            try:
-                data = json.loads(raw.decode("utf-8"))
-            except Exception:
-                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Invalid JSON"})
+            data = self._read_json_body(allow_empty=False)
+            if data is None:
                 return
             sid = str(data.get("session_id") or "").strip()
             sess_opt = daemon_state.pty_manager.get_owned(sid, owner_hash)
@@ -1373,12 +1487,8 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             if not owner_hash:
                 self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "Unauthorized."})
                 return
-            content_length = int(self.headers.get("Content-Length", 0))
-            raw = self.rfile.read(content_length) if content_length > 0 else b"{}"
-            try:
-                data = json.loads(raw.decode("utf-8"))
-            except Exception:
-                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Invalid JSON"})
+            data = self._read_json_body(allow_empty=False)
+            if data is None:
                 return
             sid = str(data.get("session_id") or "").strip()
             sess_opt = daemon_state.pty_manager.get_owned(sid, owner_hash)
@@ -1394,29 +1504,22 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             if not owner_hash:
                 self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "Unauthorized."})
                 return
-            content_length = int(self.headers.get("Content-Length", 0))
-            raw = self.rfile.read(content_length) if content_length > 0 else b"{}"
-            try:
-                data = json.loads(raw.decode("utf-8"))
-            except Exception:
-                data = {}
+            data = self._read_json_body(allow_empty=True)
+            if data is None:
+                return
             sid = str(data.get("session_id") or "").strip()
             closed = daemon_state.pty_manager.close_session(sid, owner_hash)
             self._send_json(HTTPStatus.OK, {"ok": True, "closed": closed})
             return
 
         if path in ("/api/auth/pair", "/api/terminal/pair"):
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length)
-            try:
-                data = json.loads(body.decode("utf-8"))
-            except Exception:
-                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Invalid JSON"})
+            data = self._read_json_body(allow_empty=False)
+            if data is None:
                 return
 
             pin = str(data.get("pin", "")).strip()
             secret = str(data.get("secret", "")).strip()
-            client_name = str(data.get("client_name", "iPhone Client")).strip()
+            client_name = str(data.get("client_name", "iPhone Client")).strip()[:64]
 
             valid = False
             err_msg = "Invalid PIN or Secret"
@@ -1436,8 +1539,10 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             token = daemon_state.vault.mint_token(client_name)
             logger.info("Successfully paired client: %s (%s)", client_name, self.client_address[0])
 
+            is_https = (self.headers.get("X-Forwarded-Proto", "").lower() == "https")
+            sec_attr = "; Secure" if is_https else ""
             cookie_hdr = {
-                "Set-Cookie": f"mith_term_token={token}; Path=/; Max-Age=7776000; SameSite=Lax; HttpOnly"
+                "Set-Cookie": f"mith_term_token={token}; Path=/; Max-Age=7776000; SameSite=Strict; HttpOnly{sec_attr}"
             }
             self._send_json(
                 HTTPStatus.OK,
@@ -1459,10 +1564,11 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             if not self._is_authenticated():
                 self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "Unauthorized."})
                 return
-            content_length = int(self.headers.get("Content-Length", 0))
-            data = json.loads(self.rfile.read(content_length).decode("utf-8"))
-            cred_id = str(data.get("id") or data.get("credential_id") or "").strip()
-            pubkey = str(data.get("public_key") or "")
+            data = self._read_json_body(allow_empty=False)
+            if data is None:
+                return
+            cred_id = str(data.get("id") or data.get("credential_id") or "").strip()[:256]
+            pubkey = str(data.get("public_key") or "")[:4096]
             if cred_id:
                 daemon_state.vault.register_passkey(cred_id, pubkey)
                 self._send_json(HTTPStatus.OK, {"ok": True, "registered": True, "credential_id": cred_id})
@@ -1474,11 +1580,12 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             if not self._is_authenticated():
                 self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "Unauthorized."})
                 return
-            content_length = int(self.headers.get("Content-Length", 0))
-            data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            data = self._read_json_body(allow_empty=False)
+            if data is None:
+                return
             challenge = str(data.get("challenge") or "").strip()
 
-            valid_chal = daemon_state.vault.verify_webauthn_challenge(challenge) if challenge else True
+            valid_chal = bool(challenge) and daemon_state.vault.verify_webauthn_challenge(challenge)
             if not valid_chal:
                 self._send_json(HTTPStatus.FORBIDDEN, {"ok": False, "error": "WebAuthn challenge expired or invalid."})
                 return
@@ -1507,12 +1614,8 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             if not self._is_authenticated():
                 self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "Unauthorized."})
                 return
-            content_length = int(self.headers.get("Content-Length", 0))
-            raw_body = self.rfile.read(content_length) if content_length > 0 else b"{}"
-            try:
-                data = json.loads(raw_body.decode("utf-8"))
-            except Exception:
-                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Invalid JSON"})
+            data = self._read_json_body(allow_empty=True)
+            if data is None:
                 return
             user_prompt = str(data.get("prompt", "")).strip()
 
@@ -1611,12 +1714,8 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             if not self._is_authenticated():
                 self._send_json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "Unauthorized."})
                 return
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length) if content_length > 0 else b"{}"
-            try:
-                data = json.loads(body.decode("utf-8"))
-            except Exception:
-                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Invalid JSON"})
+            data = self._read_json_body(allow_empty=True)
+            if data is None:
                 return
             line_str = str(data.get("line", ""))
             req_cwd = str(data.get("cwd") or daemon_state.current_cwd)
@@ -1640,15 +1739,11 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
                 )
                 return
 
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length)
-            try:
-                data = json.loads(body.decode("utf-8"))
-            except Exception:
-                self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Invalid JSON"})
+            data = self._read_json_body(allow_empty=False)
+            if data is None:
                 return
 
-            cmd = data.get("command", "").strip()
+            cmd = str(data.get("command", "")).strip()
             biometric_verified = bool(data.get("biometric_verified", False))
 
             if not cmd:
@@ -1658,13 +1753,13 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
             # Check destructive commands across all pipeline segments
             is_destructive = is_destructive_command(cmd)
 
-            # Check active biometric lease or verified assertion
+            # Check active server-side WebAuthn biometric lease; if hardware passkeys are enrolled
+            # on this host, require an active server-minted lease rather than client boolean alone.
             tok = self._extract_auth_token()
             tok_h = _sha256_hex(tok) if tok else ""
             has_lease = daemon_state.vault.has_active_biometric_lease(tok_h) if tok_h else False
-
-            # Allow execution if verified by active lease or verified assertion
-            is_authorized = biometric_verified or has_lease
+            has_enrolled_passkeys = bool(daemon_state.vault.webauthn_credentials)
+            is_authorized = has_lease if has_enrolled_passkeys else (has_lease or biometric_verified)
 
             if is_destructive and not is_authorized:
                 self._send_json(
@@ -1774,16 +1869,35 @@ class MithTerminalHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Endpoint not found"})
 
 
-def run_daemon(host: str = "0.0.0.0", port: int = 8790, enable_tunnel: bool = True) -> None:
+def run_daemon(
+    host: str = "0.0.0.0",
+    port: int = 8790,
+    enable_tunnel: bool = True,
+    enable_discovery: bool = True,
+) -> None:
     daemon_state.port = port
     daemon_state.lan_ip = _get_lan_ip()
+    stop_event = threading.Event()
 
     # Bind and start HTTP server immediately so local health checks pass in <15ms
     server = ThreadingHTTPServer((host, port), MithTerminalHandler)
-    _start_udp_discovery_responder(port=8791, target_tcp_port=port)
+    if enable_discovery and host not in ("127.0.0.1", "localhost", "::1"):
+        _start_udp_discovery_responder(port=8791, target_tcp_port=port)
     http_thread = threading.Thread(target=server.serve_forever, name="mith-http-server", daemon=True)
     http_thread.start()
     logger.info("Host Companion HTTP socket active on %s:%d (LAN IP: %s)", host, port, daemon_state.lan_ip)
+
+    def _graceful_shutdown(signum: int, _frame: Any) -> None:
+        logger.info("Received signal %d; tearing down tunnel and PTY sessions...", signum)
+        stop_event.set()
+
+    for sig_name in ("SIGTERM", "SIGHUP"):
+        sig_val = getattr(signal, sig_name, None)
+        if sig_val is not None:
+            try:
+                signal.signal(sig_val, _graceful_shutdown)
+            except (ValueError, OSError):
+                pass
 
     # Spawn Cloudflare Quick Tunnel without blocking HTTP requests
     tunnel_url = ""
@@ -1813,7 +1927,7 @@ def run_daemon(host: str = "0.0.0.0", port: int = 8790, enable_tunnel: bool = Tr
 
     banner = f"""
 ======================================================================
-   🚀 MiTH Terminal — Zero-Config Host Companion v1.2.0
+   🚀 MiTH Terminal — Zero-Config Host Companion v1.2.1
 ======================================================================
    Host Device:     {platform.node()} ({platform.system()} {platform.machine()})
    Local Host:      http://127.0.0.1:{port}
@@ -1835,11 +1949,13 @@ def run_daemon(host: str = "0.0.0.0", port: int = 8790, enable_tunnel: bool = Tr
     logger.info("Host Companion ready on %s:%d (LAN IP: %s)", host, port, daemon_state.lan_ip)
 
     try:
-        while http_thread.is_alive():
-            http_thread.join(timeout=1.0)
+        while http_thread.is_alive() and not stop_event.is_set():
+            stop_event.wait(timeout=1.0)
     except KeyboardInterrupt:
         logger.info("Shutting down companion daemon...")
+    finally:
         daemon_state.tunnel.stop()
+        daemon_state.pty_manager.close_all()
         server.shutdown()
         server.server_close()
 
@@ -1849,6 +1965,12 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="0.0.0.0", help="Host address (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8790, help="Port (default: 8790)")
     parser.add_argument("--no-tunnel", action="store_true", help="Disable automatic Cloudflare Quick Tunnel")
+    parser.add_argument("--no-discovery", action="store_true", help="Disable UDP LAN auto-discovery on port 8791")
     args = parser.parse_args()
 
-    run_daemon(host=args.host, port=args.port, enable_tunnel=not args.no_tunnel)
+    run_daemon(
+        host=args.host,
+        port=args.port,
+        enable_tunnel=not args.no_tunnel,
+        enable_discovery=not args.no_discovery,
+    )

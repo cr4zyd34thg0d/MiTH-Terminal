@@ -1,6 +1,6 @@
 {
   "name": "mith-terminal",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Mobile Developer Console with Multi-Session Live PTY, Zero-Config HTTPS Tunneling, and WebAuthn Biometric Gatekeeper",
   "main": "bin/mith-terminal.js",
   "bin": {

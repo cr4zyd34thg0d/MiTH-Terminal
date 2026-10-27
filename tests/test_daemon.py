@@ -749,6 +749,102 @@ class MithTerminalDaemonTests(unittest.TestCase):
                     f"OPSEC pattern '{pat.pattern}' matched in {rel}",
                 )
 
+    def test_17_consumer_security_hardening_guards(self) -> None:
+        # 1. Unauthenticated /api/ping MUST redact real host, username, home_dir, lan_ip, and tunnel_url
+        status, unauth_ping = self._json_request("GET", "/api/ping")
+        self.assertEqual(status, 200)
+        self.assertFalse(unauth_ping.get("authenticated"))
+        self.assertEqual(unauth_ping.get("host"), "Protected Host")
+        self.assertEqual(unauth_ping.get("user"), "locked")
+        self.assertEqual(unauth_ping.get("home_dir"), "~")
+        self.assertEqual(unauth_ping.get("lan_ip"), "")
+        self.assertEqual(unauth_ping.get("tunnel_url"), "")
+
+        # 2. DNS Rebinding & Stale-Tunnel protection MUST reject untrusted external or inactive trycloudflare Host headers
+        rebind_status, _ = self._json_request(
+            "GET",
+            "/api/ping",
+            headers={"Host": f"evil-rebind.attacker.example:{self.port}"},
+        )
+        self.assertEqual(rebind_status, 403)
+
+        stale_cf_status, _ = self._json_request(
+            "GET",
+            "/api/ping",
+            headers={"Host": "stale-orphan-tunnel.trycloudflare.com"},
+        )
+        self.assertEqual(stale_cf_status, 403)
+
+        # 3. Cross-Origin POST from untrusted website MUST be blocked with 403 and zero wildcard CORS
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request(
+            "POST",
+            "/api/auth/pair",
+            body=json.dumps({"pin": self.pin}).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Origin": "https://evil-blog.example",
+            },
+        )
+        evil_resp = conn.getresponse()
+        _ = evil_resp.read()
+        evil_acao = evil_resp.getheader("Access-Control-Allow-Origin")
+        conn.close()
+        self.assertEqual(evil_resp.status, 403)
+        self.assertIsNone(evil_acao)
+
+        # 4. Oversized JSON payload (>64 KiB) MUST be rejected with 413 before allocation
+        oversized_body = {"pin": "0" * 70_000}
+        over_status, _ = self._json_request("POST", "/api/auth/pair", oversized_body)
+        self.assertEqual(over_status, 413)
+
+        # 5. Empty WebAuthn challenge MUST be rejected (403), and enrolled passkeys MUST enforce server-side lease
+        _, pair_data = self._json_request("POST", "/api/auth/pair", {"pin": self.pin})
+        token = pair_data["token"]
+        auth_hdr = {"Authorization": f"Bearer {token}"}
+
+        empty_v_status, _ = self._json_request("POST", "/api/auth/webauthn/verify", {}, headers=auth_hdr)
+        self.assertEqual(empty_v_status, 403)
+
+        reg_status, _ = self._json_request(
+            "POST",
+            "/api/auth/webauthn/register",
+            {"id": "test-passkey-1", "public_key": "mock-pub"},
+            headers=auth_hdr,
+        )
+        self.assertEqual(reg_status, 200)
+        try:
+            # With an enrolled passkey, client boolean biometric_verified=True alone MUST be rejected (403)
+            bypass_status, _ = self._json_request(
+                "POST",
+                "/api/exec",
+                {"command": "sudo rm -rf /tmp/mock_passkey_guard", "biometric_verified": True},
+                headers=auth_hdr,
+            )
+            self.assertEqual(bypass_status, 403)
+
+            # Real server-minted challenge -> verify -> lease MUST authorize execution
+            _, chal_res = self._json_request("GET", "/api/auth/webauthn/challenge")
+            v_ok_status, _ = self._json_request(
+                "POST",
+                "/api/auth/webauthn/verify",
+                {"challenge": chal_res["challenge"]},
+                headers=auth_hdr,
+            )
+            self.assertEqual(v_ok_status, 200)
+
+            lease_ok_status, lease_ok_data = self._json_request(
+                "POST",
+                "/api/exec",
+                {"command": "echo passkey_lease_ok"},
+                headers=auth_hdr,
+            )
+            self.assertEqual(lease_ok_status, 200)
+            self.assertIn("passkey_lease_ok", lease_ok_data.get("stdout", ""))
+        finally:
+            daemon_srv.daemon_state.vault.webauthn_credentials.clear()
+            daemon_srv.daemon_state.vault.biometric_leases.clear()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2779,6 +2779,7 @@
 
         const cred = await navigator.credentials.create({ publicKey });
         if (cred) {
+          localStorage.setItem('mith_passkey_id', cred.id);
           try {
             await fetch(apiUrl('/api/terminal/webauthn/register'), {
               method: 'POST',
@@ -3575,15 +3576,19 @@
     async function confirmBiometricModal() {
       haptic([40, 60, 40]);
 
-      if (window.PublicKeyCredential && !isNativeShell()) {
+      const enrolledPasskeyId = localStorage.getItem('mith_passkey_id');
+      if (window.isSecureContext && window.PublicKeyCredential && !isNativeShell() && enrolledPasskeyId) {
         try {
-          // 1. Fetch challenge from host daemon
+          // 1. Fetch single-use challenge from host daemon
           const cRes = await fetch(apiUrl('/api/terminal/webauthn/challenge'));
           const cData = await cRes.json();
-          const challengeStr = cData.challenge || 'mith-biometric-gate';
+          const challengeStr = cData.challenge || '';
+          if (!challengeStr) {
+            throw new Error('Could not obtain WebAuthn challenge from host.');
+          }
           const chalBuf = new TextEncoder().encode(challengeStr);
 
-          // 2. Hardware biometric prompt on iPhone Secure Enclave
+          // 2. Hardware biometric prompt on iPhone Secure Enclave / Touch ID
           const assertion = await navigator.credentials.get({
             publicKey: {
               challenge: chalBuf,
@@ -3591,18 +3596,31 @@
               userVerification: "required"
             }
           });
+          if (!assertion) {
+            throw new DOMException('Biometric assertion declined.', 'NotAllowedError');
+          }
 
-          // 3. Register assertion on daemon to obtain active execution lease
-          await fetch(apiUrl('/api/terminal/webauthn/verify'), {
+          // 3. Verify assertion challenge on daemon to obtain active 90s execution lease
+          const vRes = await fetch(apiUrl('/api/terminal/webauthn/verify'), {
             method: 'POST',
             headers: getAuthHeaders(),
             body: JSON.stringify({
               challenge: challengeStr,
-              id: assertion ? assertion.id : 'passkey-verified'
+              id: assertion.id
             })
           });
+          const vData = await vRes.json();
+          if (!vRes.ok || !vData.ok) {
+            throw new Error(vData.error || 'Biometric lease verification failed.');
+          }
         } catch (err) {
-          console.warn("Face ID verification prompt:", err);
+          console.warn("Face ID verification aborted/failed:", err);
+          const abortedCmd = pendingDestructiveCmd;
+          pendingDestructiveCmd = null;
+          document.getElementById('biometric-modal').classList.remove('open');
+          appendTerminal(`⚠️ Biometric check failed or cancelled — execution of "${abortedCmd}" ABORTED.`, 't-err');
+          haptic([80, 50, 80]);
+          return;
         }
       }
 
@@ -3610,7 +3628,7 @@
       pendingDestructiveCmd = null;
       document.getElementById('biometric-modal').classList.remove('open');
 
-      appendTerminal(`🛡️ Face ID VERIFIED for: ${cmd}`, 't-success');
+      appendTerminal(`🛡️ Biometric gate APPROVED for: ${cmd}`, 't-success');
       executeCommand(cmd, true);
     }
 
